@@ -5,13 +5,43 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
+    "core:window:default",
+    "core:window:allow-center",
+    "core:window:allow-close",
+    "core:window:allow-minimize",
+    "core:window:allow-start-dragging",
+    "shell:default",
     "shell:allow-open",
     "shell:allow-execute",
     "shell:allow-spawn",
     "shell:allow-kill",
-    "fs:allow-read",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        { "name": "lsof", "cmd": "lsof", "args": true },
+        { "name": "kill", "cmd": "kill", "args": true },
+        { "name": "open", "cmd": "open", "args": true },
+        { "name": "pnpm", "cmd": "pnpm", "args": true },
+        { "name": "npm", "cmd": "npm", "args": true },
+        { "name": "yarn", "cmd": "yarn", "args": true },
+        { "name": "bun", "cmd": "bun", "args": true },
+        { "name": "cursor", "cmd": "cursor", "args": true },
+        { "name": "claude", "cmd": "claude", "args": true },
+        { "name": "zed", "cmd": "zed", "args": true }
+      ]
+    },
+    "fs:default",
+    "fs:allow-read-text-file",
+    "fs:allow-write-text-file",
     "fs:allow-exists",
-    "fs:read-all",
+    {
+      "identifier": "fs:allow-read-text-file",
+      "allow": [{ "path": "$HOME/**" }]
+    },
+    {
+      "identifier": "fs:allow-write-text-file",
+      "allow": [{ "path": "$HOME/.config/nodles/**" }]
+    },
     "process:default",
     "autostart:default",
     "opener:default"

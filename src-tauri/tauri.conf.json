@@ -45,44 +45,7 @@
   },
   "plugins": {
     "shell": {
-      "open": true,
-      "scope": [
-        {
-          "name": "lsof",
-          "cmd": "lsof",
-          "args": true
-        },
-        {
-          "name": "kill",
-          "cmd": "kill",
-          "args": true
-        },
-        {
-          "name": "pnpm",
-          "cmd": "pnpm",
-          "args": true
-        },
-        {
-          "name": "npm",
-          "cmd": "npm",
-          "args": true
-        },
-        {
-          "name": "yarn",
-          "cmd": "yarn",
-          "args": true
-        },
-        {
-          "name": "bun",
-          "cmd": "bun",
-          "args": true
-        },
-        {
-          "name": "open-editor",
-          "cmd": "open",
-          "args": true
-        }
-      ]
+      "open": true
     }
   }
 }
