@@ -146,12 +146,16 @@ class ProjectScanner {
     }
 
     private func expandWorkspaceGlob(_ glob: String, at baseURL: URL) -> [URL] {
-        // Handle globs like "apps/*", "packages/*"
-        // For simplicity, we only support single-level wildcards
+        // Handle globs like "apps/*", "packages/*", "apps/**"
         var dirs: [URL] = []
 
-        if glob.hasSuffix("/*") {
-            let parentPath = String(glob.dropLast(2))
+        // Normalize glob - treat "/**" same as "/*" (we only go one level deep)
+        let normalizedGlob = glob
+            .replacingOccurrences(of: "/**", with: "/*")
+            .replacingOccurrences(of: "/**/", with: "/*/")
+
+        if normalizedGlob.hasSuffix("/*") {
+            let parentPath = String(normalizedGlob.dropLast(2))
             let parentURL = baseURL.appendingPathComponent(parentPath)
 
             guard let contents = try? FileManager.default.contentsOfDirectory(
@@ -168,12 +172,29 @@ class ProjectScanner {
                     dirs.append(item)
                 }
             }
-        } else if glob.contains("*") {
-            // More complex globs - skip for now
-            return []
+        } else if normalizedGlob.contains("*") {
+            // Other glob patterns - try treating the prefix before * as a directory
+            let parts = normalizedGlob.components(separatedBy: "*")
+            if let prefix = parts.first, !prefix.isEmpty {
+                let parentPath = prefix.hasSuffix("/") ? String(prefix.dropLast()) : prefix
+                let parentURL = baseURL.appendingPathComponent(parentPath)
+
+                if let contents = try? FileManager.default.contentsOfDirectory(
+                    at: parentURL,
+                    includingPropertiesForKeys: [.isDirectoryKey],
+                    options: [.skipsHiddenFiles]
+                ) {
+                    for item in contents {
+                        if let resourceValues = try? item.resourceValues(forKeys: [.isDirectoryKey]),
+                           resourceValues.isDirectory == true {
+                            dirs.append(item)
+                        }
+                    }
+                }
+            }
         } else {
-            // Direct path
-            let directURL = baseURL.appendingPathComponent(glob)
+            // Direct path (no wildcards)
+            let directURL = baseURL.appendingPathComponent(normalizedGlob)
             if FileManager.default.fileExists(atPath: directURL.path) {
                 dirs.append(directURL)
             }
@@ -190,10 +211,10 @@ class ProjectScanner {
             return nil
         }
 
-        // Check for dev script
+        // Check for dev script - only show workspaces that can be run
         let scripts = packageJson["scripts"] as? [String: String]
         guard let devCommand = scripts?["dev"] else {
-            return nil  // No dev script, skip this workspace
+            return nil  // No dev script = library package, skip
         }
 
         let folderName = url.lastPathComponent
@@ -266,6 +287,8 @@ class ProjectScanner {
         if ports.isEmpty, let cmd = devCommand {
             if cmd.contains("next") {
                 ports.insert(3000)
+            } else if cmd.contains("storybook") {
+                ports.insert(6006)
             } else if cmd.contains("vite") || cmd.contains("astro") {
                 ports.insert(5173)
             } else if cmd.contains("nuxt") {
@@ -276,6 +299,10 @@ class ProjectScanner {
                 ports.insert(8000)
             } else if cmd.contains("webpack") && cmd.contains("serve") {
                 ports.insert(8080)
+            } else if cmd.contains("expo") {
+                ports.insert(8081)
+            } else if cmd.contains("turbo") {
+                // turbo dev doesn't have a default port - it runs workspace scripts
             }
         }
 
@@ -289,8 +316,16 @@ class ProjectScanner {
         let patterns = [
             "--port[=\\s]+(\\d+)",
             "-p\\s+(\\d+)",
+            "-p=(\\d+)",
             "PORT=(\\d+)",
-            "localhost:(\\d+)"
+            "localhost:(\\d+)",
+            // Catch bare port numbers as script arguments (e.g., "node script.mjs 4310")
+            "\\s(3\\d{3})(?:\\s|$)",   // 3000-3999
+            "\\s(4\\d{3})(?:\\s|$)",   // 4000-4999
+            "\\s(5\\d{3})(?:\\s|$)",   // 5000-5999
+            "\\s(6\\d{3})(?:\\s|$)",   // 6000-6999
+            "\\s(8\\d{3})(?:\\s|$)",   // 8000-8999
+            "\\s(9\\d{3})(?:\\s|$)",   // 9000-9999
         ]
 
         for pattern in patterns {

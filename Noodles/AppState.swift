@@ -202,9 +202,34 @@ class AppState: ObservableObject {
 
                 // Update workspace statuses for monorepos
                 for j in updatedProjects[i].workspaces.indices {
-                    let workspacePorts = currentPorts.filter { port in
+                    let workspacePath = updatedProjects[i].workspaces[j].path
+                    let workspaceRelPath = updatedProjects[i].workspaces[j].relativePath  // e.g., "apps/web"
+
+                    // Match by cwd - try multiple strategies
+                    var workspacePorts = currentPorts.filter { port in
                         guard let cwd = port.cwd else { return false }
-                        return cwd.hasPrefix(updatedProjects[i].workspaces[j].path)
+                        // Direct prefix match
+                        if cwd.hasPrefix(workspacePath) { return true }
+                        // Check if cwd contains the relative path within the project
+                        if cwd.hasPrefix(updatedProjects[i].path) && cwd.contains(workspaceRelPath) { return true }
+                        return false
+                    }
+
+                    // Fallback: match by expected port when cwd matching fails
+                    // This handles turbo dev where processes may run from monorepo root
+                    if workspacePorts.isEmpty {
+                        let expectedPorts = Set(updatedProjects[i].workspaces[j].expectedPorts)
+                        if !expectedPorts.isEmpty {
+                            // Match from all project ports OR all current ports with matching expected port
+                            workspacePorts = currentPorts.filter { port in
+                                guard expectedPorts.contains(port.port) else { return false }
+                                // Verify it's related to this project (cwd within project, or no cwd)
+                                if let cwd = port.cwd {
+                                    return cwd.hasPrefix(updatedProjects[i].path)
+                                }
+                                return true  // No cwd info, trust the port match
+                            }
+                        }
                     }
 
                     updatedProjects[i].workspaces[j].runningPorts = workspacePorts
