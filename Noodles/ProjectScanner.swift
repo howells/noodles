@@ -34,26 +34,33 @@ class ProjectScanner {
                 let folderName = url.lastPathComponent
                 let name = (packageJson["name"] as? String) ?? folderName
 
-                // Check for dev script
+                // Detect package manager
+                let packageManager = detectPackageManager(at: url)
+
+                // Check if this is a monorepo
+                let workspaces = scanWorkspaces(at: url, packageJson: packageJson, packageManager: packageManager)
+
+                // Check for dev script (monorepos might not have one at root)
                 let scripts = packageJson["scripts"] as? [String: String]
                 let devCommand = scripts?["dev"]
 
-                guard devCommand != nil else { continue }
-
-                // Detect package manager
-                let packageManager = detectPackageManager(at: url)
+                // Skip if no dev command AND no workspaces
+                guard devCommand != nil || !workspaces.isEmpty else { continue }
 
                 // Extract expected ports from multiple sources
                 let expectedPorts = detectPorts(at: url, packageJson: packageJson, devCommand: devCommand)
 
-                projects.append(Project(
+                var project = Project(
                     id: folderName,
                     name: name,
                     path: url.path,
                     packageManager: packageManager,
                     devCommand: devCommand,
                     expectedPorts: expectedPorts
-                ))
+                )
+                project.workspaces = workspaces
+
+                projects.append(project)
             }
 
             return projects
@@ -61,6 +68,151 @@ class ProjectScanner {
         } catch {
             return []
         }
+    }
+
+    // MARK: - Monorepo/Workspace Detection
+
+    private func scanWorkspaces(at url: URL, packageJson: [String: Any], packageManager: PackageManager) -> [Workspace] {
+        // Detect workspace globs from various sources
+        var workspaceGlobs: [String] = []
+
+        // 1. Check pnpm-workspace.yaml
+        let pnpmWorkspaceURL = url.appendingPathComponent("pnpm-workspace.yaml")
+        if let pnpmContent = try? String(contentsOf: pnpmWorkspaceURL, encoding: .utf8) {
+            workspaceGlobs.append(contentsOf: parseWorkspaceGlobs(from: pnpmContent))
+        }
+
+        // 2. Check package.json workspaces field (npm/yarn)
+        if let workspaces = packageJson["workspaces"] as? [String] {
+            workspaceGlobs.append(contentsOf: workspaces)
+        } else if let workspacesObj = packageJson["workspaces"] as? [String: Any],
+                  let packages = workspacesObj["packages"] as? [String] {
+            workspaceGlobs.append(contentsOf: packages)
+        }
+
+        // No workspace configuration found
+        guard !workspaceGlobs.isEmpty else { return [] }
+
+        // Also verify it's actually a monorepo tool (turbo, nx, lerna)
+        let hasTurbo = FileManager.default.fileExists(atPath: url.appendingPathComponent("turbo.json").path)
+        let hasNx = FileManager.default.fileExists(atPath: url.appendingPathComponent("nx.json").path)
+        let hasLerna = FileManager.default.fileExists(atPath: url.appendingPathComponent("lerna.json").path)
+
+        guard hasTurbo || hasNx || hasLerna || !workspaceGlobs.isEmpty else { return [] }
+
+        // Expand globs and find workspace directories
+        var workspaces: [Workspace] = []
+
+        for glob in workspaceGlobs {
+            let expandedDirs = expandWorkspaceGlob(glob, at: url)
+            for workspaceDir in expandedDirs {
+                if let workspace = scanWorkspaceDirectory(workspaceDir, relativeTo: url, packageManager: packageManager) {
+                    workspaces.append(workspace)
+                }
+            }
+        }
+
+        return workspaces.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private func parseWorkspaceGlobs(from yamlContent: String) -> [String] {
+        // Simple YAML parsing for packages field
+        // Looking for: packages:\n  - apps/*\n  - packages/*
+        var globs: [String] = []
+        var inPackages = false
+
+        for line in yamlContent.components(separatedBy: .newlines) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+
+            if trimmed.hasPrefix("packages:") {
+                inPackages = true
+                continue
+            }
+
+            if inPackages {
+                if trimmed.hasPrefix("- ") {
+                    let glob = String(trimmed.dropFirst(2)).trimmingCharacters(in: .whitespaces)
+                    // Remove quotes if present
+                    let cleanGlob = glob.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+                    globs.append(cleanGlob)
+                } else if !trimmed.isEmpty && !trimmed.hasPrefix("#") {
+                    // End of packages section
+                    break
+                }
+            }
+        }
+
+        return globs
+    }
+
+    private func expandWorkspaceGlob(_ glob: String, at baseURL: URL) -> [URL] {
+        // Handle globs like "apps/*", "packages/*"
+        // For simplicity, we only support single-level wildcards
+        var dirs: [URL] = []
+
+        if glob.hasSuffix("/*") {
+            let parentPath = String(glob.dropLast(2))
+            let parentURL = baseURL.appendingPathComponent(parentPath)
+
+            guard let contents = try? FileManager.default.contentsOfDirectory(
+                at: parentURL,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+            ) else {
+                return []
+            }
+
+            for item in contents {
+                if let resourceValues = try? item.resourceValues(forKeys: [.isDirectoryKey]),
+                   resourceValues.isDirectory == true {
+                    dirs.append(item)
+                }
+            }
+        } else if glob.contains("*") {
+            // More complex globs - skip for now
+            return []
+        } else {
+            // Direct path
+            let directURL = baseURL.appendingPathComponent(glob)
+            if FileManager.default.fileExists(atPath: directURL.path) {
+                dirs.append(directURL)
+            }
+        }
+
+        return dirs
+    }
+
+    private func scanWorkspaceDirectory(_ url: URL, relativeTo baseURL: URL, packageManager: PackageManager) -> Workspace? {
+        let packageJsonURL = url.appendingPathComponent("package.json")
+
+        guard let packageData = try? Data(contentsOf: packageJsonURL),
+              let packageJson = try? JSONSerialization.jsonObject(with: packageData) as? [String: Any] else {
+            return nil
+        }
+
+        // Check for dev script
+        let scripts = packageJson["scripts"] as? [String: String]
+        guard let devCommand = scripts?["dev"] else {
+            return nil  // No dev script, skip this workspace
+        }
+
+        let folderName = url.lastPathComponent
+        let name = (packageJson["name"] as? String) ?? folderName
+
+        // Calculate relative path from monorepo root
+        let relativePath = url.path.replacingOccurrences(of: baseURL.path + "/", with: "")
+
+        // Extract expected ports
+        let expectedPorts = detectPorts(at: url, packageJson: packageJson, devCommand: devCommand)
+
+        return Workspace(
+            id: "\(baseURL.lastPathComponent)/\(relativePath)",
+            name: name,
+            path: url.path,
+            relativePath: relativePath,
+            devCommand: devCommand,
+            expectedPorts: expectedPorts
+        )
     }
 
     private func detectPorts(at url: URL, packageJson: [String: Any], devCommand: String?) -> [Int] {

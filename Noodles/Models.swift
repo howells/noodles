@@ -24,6 +24,22 @@ enum PackageManager: String, Codable {
     }
 }
 
+struct Workspace: Identifiable {
+    let id: String
+    let name: String
+    let path: String
+    let relativePath: String  // e.g., "apps/web"
+    let devCommand: String?
+    let expectedPorts: [Int]
+    var status: ProjectStatus = .stopped
+    var runningPorts: [PortInfo] = []
+    var error: String?
+
+    var effectivePort: Int? {
+        expectedPorts.first
+    }
+}
+
 struct Project: Identifiable {
     let id: String
     let name: String
@@ -35,6 +51,11 @@ struct Project: Identifiable {
     var status: ProjectStatus = .stopped
     var runningPorts: [PortInfo] = []
     var error: String?
+    var workspaces: [Workspace] = []  // For monorepos
+
+    var isMonorepo: Bool {
+        !workspaces.isEmpty
+    }
 
     var displayPath: String {
         path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
@@ -62,6 +83,7 @@ struct PortInfo: Identifiable {
 struct Config: Codable {
     var sitesPath: String = "~/Sites"
     var editor: String = "cursor"
+    var terminal: String = "Terminal"
     var launchOnLogin: Bool = true
     var pollIntervalMs: Int = 2000
     var favorites: [String] = []
@@ -72,7 +94,7 @@ struct Config: Codable {
 struct ConfigManager {
     static let configPath: URL = {
         let home = FileManager.default.homeDirectoryForCurrentUser
-        return home.appendingPathComponent(".config/nodles/config.json")
+        return home.appendingPathComponent(".config/noodles/config.json")
     }()
 
     static func load() -> Config {

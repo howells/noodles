@@ -135,6 +135,116 @@ actor ProcessManager {
         try? process.run()
     }
 
+    nonisolated func openInTerminal(path: String, terminal: String, command: String? = nil) {
+        let expandedPath = (path as NSString).expandingTildeInPath
+        let fullCommand = command.map { "cd '\(expandedPath)' && \($0)" } ?? "cd '\(expandedPath)'"
+
+        NSLog("Noodles: Opening terminal '\(terminal)' with command: \(fullCommand)")
+
+        switch terminal {
+        case "iTerm2":
+            let script = """
+            tell application "iTerm"
+                activate
+                if (count of windows) = 0 then
+                    create window with default profile
+                else
+                    tell current window
+                        create tab with default profile
+                    end tell
+                end if
+                delay 0.2
+                tell current session of current window
+                    write text "\(fullCommand)"
+                end tell
+            end tell
+            """
+            runAppleScript(script)
+
+        case "Warp":
+            // Warp supports AppleScript
+            let script = """
+            tell application "Warp"
+                activate
+                delay 0.3
+                tell application "System Events"
+                    keystroke "t" using command down
+                    delay 0.2
+                    keystroke "\(fullCommand)"
+                    keystroke return
+                end tell
+            end tell
+            """
+            runAppleScript(script)
+
+        case "Kitty":
+            // Kitty: launch with command
+            let shellCmd = command.map { "\($0); exec $SHELL" } ?? "exec $SHELL"
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/Applications/kitty.app/Contents/MacOS/kitty")
+            process.arguments = ["--single-instance", "--directory", expandedPath, "sh", "-c", shellCmd]
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            try? process.run()
+
+        case "Ghostty":
+            // Ghostty: use -e for command execution
+            let shellCmd = command ?? "$SHELL"
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/Applications/Ghostty.app/Contents/MacOS/ghostty")
+            process.arguments = ["--working-directory=\(expandedPath)", "-e", "sh", "-c", "cd '\(expandedPath)' && \(shellCmd); exec $SHELL"]
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            try? process.run()
+
+        case "Alacritty":
+            // Alacritty: use -e for command
+            let shellCmd = command.map { "\($0); exec $SHELL" } ?? "exec $SHELL"
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/Applications/Alacritty.app/Contents/MacOS/alacritty")
+            process.arguments = ["--working-directory", expandedPath, "-e", "sh", "-c", shellCmd]
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            try? process.run()
+
+        default: // Terminal.app
+            let script = """
+            tell application "Terminal"
+                activate
+                do script "\(fullCommand)"
+            end tell
+            """
+            runAppleScript(script)
+        }
+    }
+
+    private nonisolated func runAppleScript(_ script: String) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = ["-e", script]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        try? process.run()
+    }
+
+    nonisolated static func detectInstalledTerminals() -> [(id: String, name: String)] {
+        let allTerminals = [
+            ("Terminal", "Terminal", "/System/Applications/Utilities/Terminal.app"),
+            ("iTerm2", "iTerm2", "/Applications/iTerm.app"),
+            ("Warp", "Warp", "/Applications/Warp.app"),
+            ("Kitty", "Kitty", "/Applications/kitty.app"),
+            ("Ghostty", "Ghostty", "/Applications/Ghostty.app"),
+            ("Alacritty", "Alacritty", "/Applications/Alacritty.app"),
+        ]
+
+        return allTerminals.compactMap { (id, name, path) in
+            if FileManager.default.fileExists(atPath: path) {
+                return (id: id, name: name)
+            }
+            return nil
+        }
+    }
+
     private func runCommand(_ command: String, arguments: [String]) -> String {
         let process = Process()
         let pipe = Pipe()

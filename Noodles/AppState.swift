@@ -64,22 +64,16 @@ class AppState: ObservableObject {
         guard let index = projects.firstIndex(where: { $0.id == project.id }) else { return }
         projects[index].status = .starting
 
-        Task {
-            do {
-                try await processManager.startDevServer(
-                    path: project.path,
-                    packageManager: project.packageManager,
-                    customPort: project.customPort
-                )
-            } catch {
-                await MainActor.run {
-                    if let idx = self.projects.firstIndex(where: { $0.id == project.id }) {
-                        self.projects[idx].status = .error
-                        self.projects[idx].error = error.localizedDescription
-                    }
-                }
-            }
+        // Build the dev command
+        var args = [project.packageManager.command] + project.packageManager.devArgs
+        if let port = project.customPort {
+            args.append("--port")
+            args.append(String(port))
         }
+        let devCommand = args.joined(separator: " ")
+
+        // Open terminal and run dev command
+        processManager.openInTerminal(path: project.path, terminal: config.terminal, command: devCommand)
     }
 
     func stopProject(_ project: Project) {
@@ -94,6 +88,48 @@ class AppState: ObservableObject {
                     if let idx = self.projects.firstIndex(where: { $0.id == project.id }) {
                         self.projects[idx].status = .error
                         self.projects[idx].error = error.localizedDescription
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Workspace Management
+
+    func startWorkspace(_ workspace: Workspace, in project: Project) {
+        guard let projectIndex = projects.firstIndex(where: { $0.id == project.id }),
+              let workspaceIndex = projects[projectIndex].workspaces.firstIndex(where: { $0.id == workspace.id }) else {
+            return
+        }
+
+        projects[projectIndex].workspaces[workspaceIndex].status = .starting
+
+        // Build the turbo filter command
+        // For pnpm monorepos: pnpm dev --filter=workspace-name
+        let args = [project.packageManager.command, "dev", "--filter", workspace.name]
+        let devCommand = args.joined(separator: " ")
+
+        // Open terminal and run dev command from the monorepo root
+        processManager.openInTerminal(path: project.path, terminal: config.terminal, command: devCommand)
+    }
+
+    func stopWorkspace(_ workspace: Workspace, in project: Project) {
+        guard let projectIndex = projects.firstIndex(where: { $0.id == project.id }),
+              let workspaceIndex = projects[projectIndex].workspaces.firstIndex(where: { $0.id == workspace.id }) else {
+            return
+        }
+
+        projects[projectIndex].workspaces[workspaceIndex].status = .stopping
+
+        Task {
+            do {
+                try await processManager.stopProjectProcesses(projectPath: workspace.path)
+            } catch {
+                await MainActor.run {
+                    if let pIdx = self.projects.firstIndex(where: { $0.id == project.id }),
+                       let wIdx = self.projects[pIdx].workspaces.firstIndex(where: { $0.id == workspace.id }) {
+                        self.projects[pIdx].workspaces[wIdx].status = .error
+                        self.projects[pIdx].workspaces[wIdx].error = error.localizedDescription
                     }
                 }
             }
@@ -131,6 +167,10 @@ class AppState: ObservableObject {
         processManager.openInEditor(path: path, editor: config.editor)
     }
 
+    func openInTerminal(path: String, command: String? = nil) {
+        processManager.openInTerminal(path: path, terminal: config.terminal, command: command)
+    }
+
     private func startPortPolling() {
         // Initial port refresh
         refreshPortsSync()
@@ -160,14 +200,43 @@ class AppState: ObservableObject {
 
                 updatedProjects[i].runningPorts = projectPorts
 
-                if updatedProjects[i].status == .starting || updatedProjects[i].status == .stopping {
-                    if !projectPorts.isEmpty && updatedProjects[i].status == .starting {
-                        updatedProjects[i].status = .running
-                    } else if projectPorts.isEmpty && updatedProjects[i].status == .stopping {
-                        updatedProjects[i].status = .stopped
+                // Update workspace statuses for monorepos
+                for j in updatedProjects[i].workspaces.indices {
+                    let workspacePorts = currentPorts.filter { port in
+                        guard let cwd = port.cwd else { return false }
+                        return cwd.hasPrefix(updatedProjects[i].workspaces[j].path)
                     }
-                } else if updatedProjects[i].status != .error {
-                    updatedProjects[i].status = projectPorts.isEmpty ? .stopped : .running
+
+                    updatedProjects[i].workspaces[j].runningPorts = workspacePorts
+
+                    if updatedProjects[i].workspaces[j].status == .starting || updatedProjects[i].workspaces[j].status == .stopping {
+                        if !workspacePorts.isEmpty && updatedProjects[i].workspaces[j].status == .starting {
+                            updatedProjects[i].workspaces[j].status = .running
+                        } else if workspacePorts.isEmpty && updatedProjects[i].workspaces[j].status == .stopping {
+                            updatedProjects[i].workspaces[j].status = .stopped
+                        }
+                    } else if updatedProjects[i].workspaces[j].status != .error {
+                        updatedProjects[i].workspaces[j].status = workspacePorts.isEmpty ? .stopped : .running
+                    }
+                }
+
+                // For non-monorepos, update project status as before
+                if !updatedProjects[i].isMonorepo {
+                    if updatedProjects[i].status == .starting || updatedProjects[i].status == .stopping {
+                        if !projectPorts.isEmpty && updatedProjects[i].status == .starting {
+                            updatedProjects[i].status = .running
+                        } else if projectPorts.isEmpty && updatedProjects[i].status == .stopping {
+                            updatedProjects[i].status = .stopped
+                        }
+                    } else if updatedProjects[i].status != .error {
+                        updatedProjects[i].status = projectPorts.isEmpty ? .stopped : .running
+                    }
+                } else {
+                    // For monorepos, project is "running" if any workspace is running
+                    let anyWorkspaceRunning = updatedProjects[i].workspaces.contains { $0.status == .running }
+                    if updatedProjects[i].status != .starting && updatedProjects[i].status != .stopping && updatedProjects[i].status != .error {
+                        updatedProjects[i].status = anyWorkspaceRunning ? .running : .stopped
+                    }
                 }
             }
 

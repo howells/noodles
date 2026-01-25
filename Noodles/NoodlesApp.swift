@@ -23,7 +23,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
         // Create the popover
         popover = NSPopover()
-        popover.contentSize = NSSize(width: 420, height: 600)
+        popover.contentSize = NSSize(width: 428, height: 608)
         popover.behavior = .transient
         popover.delegate = self
         popover.contentViewController = NSHostingController(
@@ -85,19 +85,47 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         Task { @MainActor in
             guard let button = statusItem.button else { return }
 
-            let runningCount = appState.projects.filter { $0.status == .running }.count
-
-            let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
-            let image = NSImage(systemSymbolName: "circle.grid.2x2.fill", accessibilityDescription: "Noodles")?
-                .withSymbolConfiguration(config)
-            button.image = image
-
-            if runningCount > 0 {
-                button.title = " \(runningCount)"
-            } else {
-                button.title = ""
-            }
+            let runningCount = min(appState.projects.filter { $0.status == .running }.count, 4)
+            button.image = createGridIcon(runningCount: runningCount)
+            button.title = ""
         }
+    }
+
+    private func createGridIcon(runningCount: Int) -> NSImage {
+        let size: CGFloat = 18
+        let dotSize: CGFloat = 5
+        let spacing: CGFloat = 2
+
+        let image = NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
+            let totalGridSize = dotSize * 2 + spacing
+            let offsetX = (size - totalGridSize) / 2
+            let offsetY = (size - totalGridSize) / 2
+
+            // Dot positions: top-left, top-right, bottom-left, bottom-right
+            let positions: [(CGFloat, CGFloat)] = [
+                (offsetX, offsetY + dotSize + spacing),                    // top-left
+                (offsetX + dotSize + spacing, offsetY + dotSize + spacing), // top-right
+                (offsetX, offsetY),                                         // bottom-left
+                (offsetX + dotSize + spacing, offsetY)                      // bottom-right
+            ]
+
+            for (index, pos) in positions.enumerated() {
+                let dotRect = NSRect(x: pos.0, y: pos.1, width: dotSize, height: dotSize)
+                let path = NSBezierPath(ovalIn: dotRect)
+
+                if index < runningCount {
+                    NSColor.systemGreen.setFill()
+                } else {
+                    NSColor.secondaryLabelColor.setFill()
+                }
+                path.fill()
+            }
+
+            return true
+        }
+
+        image.isTemplate = false
+        return image
     }
 
     @objc func togglePopover() {

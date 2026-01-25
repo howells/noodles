@@ -5,12 +5,17 @@ struct SettingsView: View {
     @Binding var isPresented: Bool
     @State private var sitesPath: String = ""
     @State private var selectedEditor: String = ""
+    @State private var selectedTerminal: String = ""
 
     private let editors = [
         ("cursor", "Cursor"),
         ("code", "VS Code"),
         ("zed", "Zed")
     ]
+
+    private var terminals: [(id: String, name: String)] {
+        ProcessManager.detectInstalledTerminals()
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -78,11 +83,36 @@ struct SettingsView: View {
 
                             HStack(spacing: 6) {
                                 ForEach(editors, id: \.0) { editor in
-                                    EditorButton(
+                                    OptionButton(
                                         name: editor.1,
                                         isSelected: selectedEditor == editor.0
                                     ) {
                                         selectedEditor = editor.0
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Terminal
+                    SettingsCard {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label("Default Terminal", systemImage: "terminal")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(.secondary)
+
+                            let terminalList = terminals
+                            LazyVGrid(columns: [
+                                GridItem(.flexible()),
+                                GridItem(.flexible()),
+                                GridItem(.flexible())
+                            ], spacing: 6) {
+                                ForEach(terminalList, id: \.id) { terminal in
+                                    OptionButton(
+                                        name: terminal.name,
+                                        isSelected: selectedTerminal == terminal.id
+                                    ) {
+                                        selectedTerminal = terminal.id
                                     }
                                 }
                             }
@@ -144,11 +174,12 @@ struct SettingsView: View {
             .padding(.vertical, 12)
             .background(Color(NSColor.windowBackgroundColor))
         }
-        .frame(width: 340, height: 380)
+        .frame(width: 340, height: 460)
         .background(Color(NSColor.windowBackgroundColor))
         .onAppear {
             sitesPath = appState.config.sitesPath
             selectedEditor = appState.config.editor
+            selectedTerminal = appState.config.terminal
         }
     }
 
@@ -176,6 +207,10 @@ struct SettingsView: View {
             appState.config.editor = selectedEditor
         }
 
+        if appState.config.terminal != selectedTerminal {
+            appState.config.terminal = selectedTerminal
+        }
+
         ConfigManager.save(appState.config)
 
         if needsRescan {
@@ -200,7 +235,7 @@ struct SettingsCard<Content: View>: View {
     }
 }
 
-struct EditorButton: View {
+struct OptionButton: View {
     let name: String
     let isSelected: Bool
     let action: () -> Void
@@ -208,7 +243,7 @@ struct EditorButton: View {
     var body: some View {
         Button(action: action) {
             Text(name)
-                .font(.system(size: 12, weight: isSelected ? .medium : .regular))
+                .font(.system(size: 11, weight: isSelected ? .medium : .regular))
                 .foregroundColor(isSelected ? .white : .primary)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 8)

@@ -58,8 +58,16 @@ struct ContentView: View {
                 .padding(.bottom, 12)
             }
         }
-        .frame(width: 420, height: 600)
-        .background(Color(NSColor.windowBackgroundColor))
+        .frame(width: 420, height: 600, alignment: .top)
+        .clipped()
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color(NSColor.windowBackgroundColor))
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .padding(4)
+        .background(Color(NSColor.windowBackgroundColor).opacity(0.6))
+        .frame(width: 428, height: 608)
         .onAppear {
             appState.scan()
         }
