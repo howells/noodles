@@ -1,4 +1,4 @@
-# nodles - Implementation Plan
+# noodles - Implementation Plan
 
 A visual Node.js dev server manager for ~/Sites projects.
 
@@ -313,7 +313,7 @@ export interface Config {
 import { create } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
 
-interface NodlesStore {
+interface NoodlesStore {
   // State
   projects: Project[]
   ports: PortInfo[]
@@ -342,7 +342,7 @@ interface NodlesStore {
   getOrphanPorts: () => PortInfo[]  // ports not matched to any project
 }
 
-export const useStore = create<NodlesStore>()(
+export const useStore = create<NoodlesStore>()(
   subscribeWithSelector((set, get) => ({
     // ... implementation
   }))
@@ -747,7 +747,7 @@ export function useProcessControl() {
 
 ### Config Location
 
-`~/.config/nodles/config.json`
+`~/.config/noodles/config.json`
 
 ### Default Config
 
@@ -814,7 +814,7 @@ fn main() {
 ### Error Types
 
 ```typescript
-type NodlesError =
+type NoodlesError =
   | { type: 'port_in_use'; port: number; pid: number }
   | { type: 'process_not_found'; pid: number }
   | { type: 'permission_denied'; path: string }
@@ -885,7 +885,7 @@ const startProject = async (projectId: string) => {
 ## File Structure
 
 ```
-nodles/
+noodles/
 ├── src/
 │   ├── App.tsx
 │   ├── main.tsx
