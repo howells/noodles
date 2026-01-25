@@ -2,11 +2,12 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject var appState: AppState
+    @State private var showingSettings = false
 
     var body: some View {
         VStack(spacing: 0) {
             // Header
-            HeaderView()
+            HeaderView(showingSettings: $showingSettings)
 
             // Search
             SearchField(text: $appState.filter)
@@ -16,8 +17,20 @@ struct ContentView: View {
             // Project list
             ScrollView {
                 LazyVStack(spacing: 4) {
-                    let running = appState.projects.filter { $0.status == .running }
-                    let stopped = appState.projects.filter { $0.status != .running }
+                    let favorites = appState.favoriteProjects
+                    let running = appState.runningProjects.filter { !appState.isFavorite($0) }
+                    let stopped = appState.stoppedProjects.filter { !appState.isFavorite($0) }
+
+                    if !favorites.isEmpty {
+                        Section {
+                            ForEach(favorites) { project in
+                                ProjectCard(project: project)
+                                    .id("\(project.id)-\(project.status)")
+                            }
+                        } header: {
+                            SectionHeader(title: "Favorites", count: favorites.count, icon: "star.fill")
+                        }
+                    }
 
                     if !running.isEmpty {
                         Section {
@@ -45,19 +58,24 @@ struct ContentView: View {
                 .padding(.bottom, 12)
             }
         }
+        .frame(width: 420, height: 600)
         .background(Color(NSColor.windowBackgroundColor))
         .onAppear {
             appState.scan()
+        }
+        .sheet(isPresented: $showingSettings) {
+            SettingsView(isPresented: $showingSettings)
         }
     }
 }
 
 struct HeaderView: View {
     @EnvironmentObject var appState: AppState
+    @Binding var showingSettings: Bool
 
     var body: some View {
         HStack {
-            Text("nodles")
+            Text("noodles")
                 .font(.system(size: 14, weight: .semibold))
 
             Spacer()
@@ -71,6 +89,22 @@ struct HeaderView: View {
             .buttonStyle(.plain)
             .opacity(appState.isScanning ? 0.5 : 1)
             .disabled(appState.isScanning)
+
+            Menu {
+                Button("Settings...") {
+                    showingSettings = true
+                }
+                Divider()
+                Button("Quit Noodles") {
+                    NSApplication.shared.terminate(nil)
+                }
+                .keyboardShortcut("q", modifiers: .command)
+            } label: {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 12))
+            }
+            .menuStyle(.borderlessButton)
+            .frame(width: 20)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
@@ -112,9 +146,15 @@ struct SearchField: View {
 struct SectionHeader: View {
     let title: String
     let count: Int
+    var icon: String? = nil
 
     var body: some View {
-        HStack {
+        HStack(spacing: 4) {
+            if let icon = icon {
+                Image(systemName: icon)
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+            }
             Text(title)
                 .font(.system(size: 11, weight: .medium))
                 .foregroundColor(.secondary)

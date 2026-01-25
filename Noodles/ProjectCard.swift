@@ -59,7 +59,15 @@ struct ProjectCard: View {
             RoundedRectangle(cornerRadius: 8)
                 .fill(Color(NSColor.controlBackgroundColor))
         )
+        .opacity(appState.isHidden(project) ? 0.5 : 1.0)
         .contextMenu {
+            Button(appState.isFavorite(project) ? "Remove from Favorites" : "Add to Favorites") {
+                appState.toggleFavorite(project)
+            }
+            Button(appState.isHidden(project) ? "Unhide Project" : "Hide Project") {
+                appState.toggleHidden(project)
+            }
+            Divider()
             Button("Set Custom Port...") {
                 portInput = project.customPort.map { String($0) } ?? ""
                 showingPortSheet = true
@@ -159,9 +167,9 @@ struct ActionButtons: View {
                     .scaleEffect(0.5)
                     .frame(width: 20, height: 20)
             } else if project.status == .running {
-                // Open in browser
-                if let port = project.firstPort {
-                    IconButton(icon: "globe", help: "Open in browser") {
+                // Open in browser (custom port takes precedence)
+                if let port = project.browserPort {
+                    IconButton(icon: "globe", help: "Open localhost:\(port)") {
                         appState.openInBrowser(port: port)
                     }
                 }

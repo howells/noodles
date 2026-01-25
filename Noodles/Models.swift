@@ -40,11 +40,12 @@ struct Project: Identifiable {
         path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
     }
 
-    var firstPort: Int? {
-        runningPorts.first?.port ?? customPort ?? expectedPorts.first
+    // Port to open in browser - custom port takes precedence
+    var browserPort: Int? {
+        customPort ?? runningPorts.first?.port ?? expectedPorts.first
     }
 
-    // The port this project will actually use
+    // The port this project will start on
     var effectivePort: Int? {
         customPort ?? expectedPorts.first
     }

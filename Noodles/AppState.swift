@@ -1,13 +1,19 @@
 import Foundation
 import Combine
+import ServiceManagement
 
 @MainActor
 class AppState: ObservableObject {
-    @Published var projects: [Project] = []
+    @Published var projects: [Project] = [] {
+        didSet {
+            NotificationCenter.default.post(name: NSNotification.Name("ProjectsDidChange"), object: nil)
+        }
+    }
     @Published var ports: [PortInfo] = []
     @Published var isScanning = false
     @Published var filter = ""
     @Published var config: Config
+    @Published var showHidden = false
 
     private var portPollingTimer: Timer?
     private let processManager = ProcessManager()
@@ -18,11 +24,11 @@ class AppState: ObservableObject {
     }
 
     func scan() {
-        NSLog("Nodles: scan() called")
+        NSLog("Noodles: scan() called")
         isScanning = true
 
         var scannedProjects = scanner.scan(sitesPath: config.sitesPath)
-        NSLog("Nodles: Got %d scanned projects", scannedProjects.count)
+        NSLog("Noodles: Got %d scanned projects", scannedProjects.count)
 
         // Apply custom ports from config
         for i in scannedProjects.indices {
@@ -36,7 +42,7 @@ class AppState: ObservableObject {
             a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
         }
 
-        NSLog("Nodles: Set projects array, count = %d", self.projects.count)
+        NSLog("Noodles: Set projects array, count = %d", self.projects.count)
         self.isScanning = false
 
         // Start port polling after initial load
@@ -145,13 +151,22 @@ class AppState: ObservableObject {
     }
 
     var filteredProjects: [Project] {
-        if filter.isEmpty {
-            return projects
+        var result = projects
+
+        // Exclude hidden projects unless showHidden is true
+        if !showHidden {
+            result = result.filter { !isHidden($0) }
         }
-        return projects.filter {
-            $0.name.localizedCaseInsensitiveContains(filter) ||
-            $0.path.localizedCaseInsensitiveContains(filter)
+
+        // Apply search filter
+        if !filter.isEmpty {
+            result = result.filter {
+                $0.name.localizedCaseInsensitiveContains(filter) ||
+                $0.path.localizedCaseInsensitiveContains(filter)
+            }
         }
+
+        return result
     }
 
     var runningProjects: [Project] {
@@ -160,6 +175,70 @@ class AppState: ObservableObject {
 
     var stoppedProjects: [Project] {
         filteredProjects.filter { $0.status != .running }
+    }
+
+    var favoriteProjects: [Project] {
+        filteredProjects.filter { isFavorite($0) }
+    }
+
+    // MARK: - Favorites
+
+    func isFavorite(_ project: Project) -> Bool {
+        config.favorites.contains(project.id)
+    }
+
+    func toggleFavorite(_ project: Project) {
+        if isFavorite(project) {
+            config.favorites.removeAll { $0 == project.id }
+        } else {
+            config.favorites.append(project.id)
+        }
+        ConfigManager.save(config)
+    }
+
+    // MARK: - Hidden Projects
+
+    func isHidden(_ project: Project) -> Bool {
+        config.hiddenProjects.contains(project.id)
+    }
+
+    func toggleHidden(_ project: Project) {
+        if isHidden(project) {
+            config.hiddenProjects.removeAll { $0 == project.id }
+        } else {
+            config.hiddenProjects.append(project.id)
+        }
+        ConfigManager.save(config)
+    }
+
+    var hiddenProjectCount: Int {
+        config.hiddenProjects.count
+    }
+
+    // MARK: - Launch on Login
+
+    func setLaunchOnLogin(_ enabled: Bool) {
+        config.launchOnLogin = enabled
+        ConfigManager.save(config)
+
+        do {
+            if enabled {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+        } catch {
+            NSLog("Noodles: Failed to set launch on login: \(error)")
+        }
+    }
+
+    func syncLaunchOnLoginState() {
+        let status = SMAppService.mainApp.status
+        let isRegistered = status == .enabled
+        if config.launchOnLogin != isRegistered {
+            config.launchOnLogin = isRegistered
+            ConfigManager.save(config)
+        }
     }
 
     // Port conflict detection (uses effective port: custom if set, else first expected)
