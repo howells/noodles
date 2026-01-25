@@ -64,9 +64,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        // Clean up keyboard monitor
         if let monitor = keyboardMonitor {
             NSEvent.removeMonitor(monitor)
         }
+
+        // Remove NotificationCenter observer
+        NotificationCenter.default.removeObserver(self)
+
+        // Clean up AppState (invalidate timers, stop spawned processes)
+        let semaphore = DispatchSemaphore(value: 0)
+        Task { @MainActor in
+            await appState.cleanup()
+            semaphore.signal()
+        }
+        semaphore.wait()
     }
 
     @objc func updateStatusButton() {

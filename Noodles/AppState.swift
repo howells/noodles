@@ -23,6 +23,17 @@ class AppState: ObservableObject {
         self.config = ConfigManager.load()
     }
 
+    deinit {
+        portPollingTimer?.invalidate()
+        portPollingTimer = nil
+    }
+
+    func cleanup() async {
+        portPollingTimer?.invalidate()
+        portPollingTimer = nil
+        await processManager.cleanupSpawnedProcesses()
+    }
+
     func scan() {
         NSLog("Noodles: scan() called")
         isScanning = true
@@ -90,9 +101,25 @@ class AppState: ObservableObject {
     }
 
     func restartProject(_ project: Project) {
-        stopProject(project)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-            self.startProject(project)
+        guard let index = projects.firstIndex(where: { $0.id == project.id }) else { return }
+        projects[index].status = .stopping
+
+        Task {
+            do {
+                try await processManager.stopProjectProcesses(projectPath: project.path)
+                // Wait for port to be released
+                try await Task.sleep(nanoseconds: 500_000_000)
+                await MainActor.run {
+                    self.startProject(project)
+                }
+            } catch {
+                await MainActor.run {
+                    if let idx = self.projects.firstIndex(where: { $0.id == project.id }) {
+                        self.projects[idx].status = .error
+                        self.projects[idx].error = error.localizedDescription
+                    }
+                }
+            }
         }
     }
 
@@ -119,34 +146,33 @@ class AppState: ObservableObject {
         Task {
             let currentPorts = await processManager.getListeningPorts()
 
-            await MainActor.run {
-                self.ports = currentPorts
+            // AppState is @MainActor so we're already on main
+            self.ports = currentPorts
 
-                // Create updated projects array to trigger SwiftUI update
-                var updatedProjects = self.projects
+            // Create updated projects array to trigger SwiftUI update
+            var updatedProjects = self.projects
 
-                for i in updatedProjects.indices {
-                    let projectPorts = currentPorts.filter { port in
-                        guard let cwd = port.cwd else { return false }
-                        return cwd.hasPrefix(updatedProjects[i].path)
-                    }
-
-                    updatedProjects[i].runningPorts = projectPorts
-
-                    if updatedProjects[i].status == .starting || updatedProjects[i].status == .stopping {
-                        if !projectPorts.isEmpty && updatedProjects[i].status == .starting {
-                            updatedProjects[i].status = .running
-                        } else if projectPorts.isEmpty && updatedProjects[i].status == .stopping {
-                            updatedProjects[i].status = .stopped
-                        }
-                    } else if updatedProjects[i].status != .error {
-                        updatedProjects[i].status = projectPorts.isEmpty ? .stopped : .running
-                    }
+            for i in updatedProjects.indices {
+                let projectPorts = currentPorts.filter { port in
+                    guard let cwd = port.cwd else { return false }
+                    return cwd.hasPrefix(updatedProjects[i].path)
                 }
 
-                // Assign new array to trigger @Published update
-                self.projects = updatedProjects
+                updatedProjects[i].runningPorts = projectPorts
+
+                if updatedProjects[i].status == .starting || updatedProjects[i].status == .stopping {
+                    if !projectPorts.isEmpty && updatedProjects[i].status == .starting {
+                        updatedProjects[i].status = .running
+                    } else if projectPorts.isEmpty && updatedProjects[i].status == .stopping {
+                        updatedProjects[i].status = .stopped
+                    }
+                } else if updatedProjects[i].status != .error {
+                    updatedProjects[i].status = projectPorts.isEmpty ? .stopped : .running
+                }
             }
+
+            // Assign new array to trigger @Published update
+            self.projects = updatedProjects
         }
     }
 

@@ -2,6 +2,7 @@ import Foundation
 import AppKit
 
 actor ProcessManager {
+    private var spawnedProcesses: [Int32] = []
 
     func getListeningPorts() async -> [PortInfo] {
         let output = runCommand("/usr/sbin/lsof", arguments: ["-i", "-P", "-n"])
@@ -56,25 +57,18 @@ actor ProcessManager {
     }
 
     private func getProcessCwdFast(pid: Int) -> String? {
-        // Use procfs-style approach on macOS
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/bin/sh")
-        task.arguments = ["-c", "lsof -p \(pid) 2>/dev/null | grep cwd | awk '{print $NF}'"]
+        // Use lsof directly with arguments (no shell interpolation)
+        let output = runCommand("/usr/sbin/lsof", arguments: ["-p", String(pid)])
+        let lines = output.components(separatedBy: "\n")
 
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = FileHandle.nullDevice
-
-        do {
-            try task.run()
-            task.waitUntilExit()
-
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            if let path = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !path.isEmpty {
-                return path
+        for line in lines {
+            if line.contains("cwd") {
+                let parts = line.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+                if let last = parts.last {
+                    return last
+                }
             }
-        } catch {}
+        }
 
         return nil
     }
@@ -99,6 +93,16 @@ actor ProcessManager {
         process.standardError = FileHandle.nullDevice
 
         try process.run()
+
+        // Track spawned process for cleanup
+        spawnedProcesses.append(process.processIdentifier)
+    }
+
+    func cleanupSpawnedProcesses() async {
+        for pid in spawnedProcesses {
+            kill(pid, SIGTERM)
+        }
+        spawnedProcesses.removeAll()
     }
 
     func stopProcess(pid: Int, force: Bool = false) async throws {
@@ -116,7 +120,7 @@ actor ProcessManager {
     }
 
     nonisolated func openInBrowser(port: Int) {
-        let url = URL(string: "http://localhost:\(port)")!
+        guard let url = URL(string: "http://localhost:\(port)") else { return }
         NSWorkspace.shared.open(url)
     }
 
