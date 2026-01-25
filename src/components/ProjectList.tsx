@@ -1,90 +1,58 @@
 import { ProjectCard } from "./ProjectCard";
-import type { Project } from "../types";
+import { useStore } from "../store";
 
-// Mock data for development
-const MOCK_PROJECTS: Project[] = [
-  {
-    id: "obliq",
-    name: "obliq",
-    path: "/Users/danielhowells/Sites/obliq",
-    devCommand: "next dev --port 9000",
-    expectedPorts: [9000],
-    packageManager: "pnpm",
-    projectType: { type: "standard" },
-    favorite: false,
-    hidden: false,
-    status: "running",
-    runningPorts: [{ port: 9000, pid: 52778, processName: "node" }],
-  },
-  {
-    id: "aloud",
-    name: "aloud",
-    path: "/Users/danielhowells/Sites/aloud",
-    devCommand: "next dev",
-    expectedPorts: [3000],
-    packageManager: "pnpm",
-    projectType: { type: "standard" },
-    favorite: false,
-    hidden: false,
-    status: "running",
-    runningPorts: [{ port: 3000, pid: 18698, processName: "node" }],
-  },
-  {
-    id: "reccs",
-    name: "reccs",
-    path: "/Users/danielhowells/Sites/reccs",
-    devCommand: "next dev --port 5000",
-    expectedPorts: [5000],
-    packageManager: "pnpm",
-    projectType: { type: "standard" },
-    favorite: false,
-    hidden: false,
-    status: "stopped",
-    runningPorts: [],
-  },
-  {
-    id: "siteinspire",
-    name: "siteinspire",
-    path: "/Users/danielhowells/Sites/siteinspire",
-    devCommand: "turbo dev",
-    expectedPorts: [3000],
-    packageManager: "pnpm",
-    projectType: { type: "turborepo", apps: ["apps/web"] },
-    favorite: true,
-    hidden: false,
-    status: "stopped",
-    runningPorts: [],
-  },
-  {
-    id: "tersa",
-    name: "tersa",
-    path: "/Users/danielhowells/Sites/tersa",
-    devCommand:
-      'concurrently "next dev --port 6000" "supabase start" "email dev --port 6001"',
-    expectedPorts: [6000, 6001],
-    packageManager: "pnpm",
-    projectType: { type: "standard" },
-    favorite: false,
-    hidden: false,
-    status: "stopped",
-    runningPorts: [],
-  },
-];
+export function ProjectList() {
+  const projects = useStore((s) => s.projects);
+  const filter = useStore((s) => s.filter);
+  const isScanning = useStore((s) => s.isScanning);
+  const scanError = useStore((s) => s.scanError);
 
-interface ProjectListProps {
-  filter: string;
-}
-
-export function ProjectList({ filter }: ProjectListProps) {
-  const filteredProjects = MOCK_PROJECTS.filter(
+  const filteredProjects = projects.filter(
     (p) =>
       !p.hidden &&
       (p.name.toLowerCase().includes(filter.toLowerCase()) ||
+        p.id.toLowerCase().includes(filter.toLowerCase()) ||
         p.path.toLowerCase().includes(filter.toLowerCase()))
   );
 
-  const runningProjects = filteredProjects.filter((p) => p.status === "running");
-  const stoppedProjects = filteredProjects.filter((p) => p.status !== "running");
+  const runningProjects = filteredProjects.filter((p) => p.status === "running" || p.status === "starting" || p.status === "stopping");
+  const stoppedProjects = filteredProjects.filter((p) => p.status === "stopped" || p.status === "error");
+
+  if (scanError) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
+        <p className="text-[var(--error)]">Failed to scan projects</p>
+        <p className="text-sm text-[var(--text-muted)]">{scanError}</p>
+      </div>
+    );
+  }
+
+  if (isScanning && projects.length === 0) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <p className="text-[var(--text-muted)]">Scanning projects...</p>
+      </div>
+    );
+  }
+
+  if (filteredProjects.length === 0 && filter) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <p className="text-[var(--text-muted)]">No projects match "{filter}"</p>
+      </div>
+    );
+  }
+
+  if (projects.length === 0) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
+        <p className="text-[var(--text-muted)]">No projects found</p>
+        <p className="text-xs text-[var(--text-muted)]">
+          Make sure ~/Sites contains projects with package.json and a dev script
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -116,12 +84,6 @@ export function ProjectList({ filter }: ProjectListProps) {
             ))}
           </div>
         </section>
-      )}
-
-      {filteredProjects.length === 0 && (
-        <div className="flex h-full items-center justify-center text-[var(--text-muted)]">
-          <p>No projects found</p>
-        </div>
       )}
     </div>
   );

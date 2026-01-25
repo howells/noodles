@@ -38,9 +38,6 @@ export function ProjectCard({ project }: ProjectCardProps) {
                   key={port.port}
                   port={port.port}
                   label={port.label}
-                  onClick={() => {
-                    // Will open in browser
-                  }}
                 />
               ))}
             </div>
