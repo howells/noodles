@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"Default capabilities for nodles","local":true,"windows":["main"],"permissions":["core:default","shell:allow-open","shell:allow-execute","shell:allow-spawn","shell:allow-kill","fs:allow-read","fs:allow-exists","fs:read-all","process:default","autostart:default","opener:default"]}}
