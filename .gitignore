@@ -1,9 +1,14 @@
 # Xcode user/workspace data
-Noodles.xcodeproj/project.xcworkspace/
-Noodles.xcodeproj/xcuserdata/
+*.xcworkspace/
+xcuserdata/
 
-# Project assets (requested to ignore)
-Noodles/Assets.xcassets/
+# Project assets
+Assets.xcassets/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
 
 # macOS
 .DS_Store
