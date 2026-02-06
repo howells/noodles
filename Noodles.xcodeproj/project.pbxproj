@@ -15,7 +15,23 @@
 		A1000006 /* ProjectScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000006; };
 		A1000007 /* ProjectCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000007; };
 		A1000008 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000009; };
+		A1000009 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A2000011; };
+		B1000001 /* NoodlesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000001; };
+		B1000002 /* ProcessManagerParsingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000003; };
+		B1000003 /* AppStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000004; };
+		B1000004 /* LayoutConstantsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000005; };
+		B1000005 /* ProcessManagerStopTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000006; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		B6000003 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A9000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A6000001;
+			remoteInfo = Noodles;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		A2000001 /* NoodlesApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoodlesApp.swift; sourceTree = "<group>"; };
@@ -28,11 +44,26 @@
 		A2000008 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A2000009 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		A2000010 /* Noodles.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Noodles.entitlements; sourceTree = "<group>"; };
+		A2000011 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A3000001 /* Noodles.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Noodles.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B2000001 /* NoodlesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoodlesTests.swift; sourceTree = "<group>"; };
+		B2000002 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		B2000003 /* ProcessManagerParsingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessManagerParsingTests.swift; sourceTree = "<group>"; };
+		B2000004 /* AppStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStateTests.swift; sourceTree = "<group>"; };
+		B2000005 /* LayoutConstantsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutConstantsTests.swift; sourceTree = "<group>"; };
+		B2000006 /* ProcessManagerStopTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessManagerStopTests.swift; sourceTree = "<group>"; };
+		B3000001 /* NoodlesTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NoodlesTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		A4000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B4000001 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -46,6 +77,7 @@
 			isa = PBXGroup;
 			children = (
 				A5000002 /* Noodles */,
+				B5000001 /* NoodlesTests */,
 				A5000003 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -53,6 +85,7 @@
 		A5000002 /* Noodles */ = {
 			isa = PBXGroup;
 			children = (
+				A2000011 /* Assets.xcassets */,
 				A2000001 /* NoodlesApp.swift */,
 				A2000002 /* ContentView.swift */,
 				A2000003 /* AppState.swift */,
@@ -67,10 +100,24 @@
 			path = Noodles;
 			sourceTree = "<group>";
 		};
+		B5000001 /* NoodlesTests */ = {
+			isa = PBXGroup;
+			children = (
+				B2000001 /* NoodlesTests.swift */,
+				B2000003 /* ProcessManagerParsingTests.swift */,
+				B2000004 /* AppStateTests.swift */,
+				B2000005 /* LayoutConstantsTests.swift */,
+				B2000006 /* ProcessManagerStopTests.swift */,
+				B2000002 /* Info.plist */,
+			);
+			path = NoodlesTests;
+			sourceTree = "<group>";
+		};
 		A5000003 /* Products */ = {
 			isa = PBXGroup;
 			children = (
 				A3000001 /* Noodles.app */,
+				B3000001 /* NoodlesTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -83,6 +130,7 @@
 			buildConfigurationList = A8000001 /* Build configuration list for PBXNativeTarget "Noodles" */;
 			buildPhases = (
 				A7000001 /* Sources */,
+				A7000002 /* Resources */,
 				A4000001 /* Frameworks */,
 			);
 			buildRules = (
@@ -93,6 +141,24 @@
 			productName = Noodles;
 			productReference = A3000001 /* Noodles.app */;
 			productType = "com.apple.product-type.application";
+		};
+		B6000001 /* NoodlesTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B8000001 /* Build configuration list for PBXNativeTarget "NoodlesTests" */;
+			buildPhases = (
+				B7000001 /* Sources */,
+				B7000002 /* Resources */,
+				B4000001 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				B6000002 /* PBXTargetDependency */,
+			);
+			name = NoodlesTests;
+			productName = NoodlesTests;
+			productReference = B3000001 /* NoodlesTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
 
@@ -118,6 +184,7 @@
 			projectRoot = "";
 			targets = (
 				A6000001 /* Noodles */,
+				B6000001 /* NoodlesTests */,
 			);
 		};
 /* End PBXProject section */
@@ -138,7 +205,45 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		B7000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B1000001 /* NoodlesTests.swift in Sources */,
+				B1000002 /* ProcessManagerParsingTests.swift in Sources */,
+				B1000003 /* AppStateTests.swift in Sources */,
+				B1000004 /* LayoutConstantsTests.swift in Sources */,
+				B1000005 /* ProcessManagerStopTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A7000002 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1000009 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B7000002 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		B6000002 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A6000001 /* Noodles */;
+			targetProxy = B6000003 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		AA000001 /* Debug */ = {
@@ -308,6 +413,46 @@
 			};
 			name = Release;
 		};
+		B9000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "";
+				INFOPLIST_FILE = NoodlesTests/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.howells.NoodlesTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Noodles.app/Contents/MacOS/Noodles";
+			};
+			name = Debug;
+		};
+		B9000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "";
+				INFOPLIST_FILE = NoodlesTests/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.howells.NoodlesTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Noodles.app/Contents/MacOS/Noodles";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -316,6 +461,15 @@
 			buildConfigurations = (
 				AA000001 /* Debug */,
 				AA000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B8000001 /* Build configuration list for PBXNativeTarget "NoodlesTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B9000001 /* Debug */,
+				B9000002 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
