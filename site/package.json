@@ -10,17 +10,21 @@
     "format": "biome format --write ."
   },
   "dependencies": {
+    "media-chrome": "^4.17.2",
+    "motion": "^12.33.0",
+    "motion-plus": "https://api.motion.dev/registry?package=motion-plus&version=2.0.0&token=547f9719bf0fd6b50c6e5014a3137fd442d8351128a6b222f8c5145f15ab5efa",
     "next": "^16.1.6",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "usehooks-ts": "^3.1.1"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.0.0",
     "@tailwindcss/postcss": "^4.1.7",
-    "tailwindcss": "^4.1.7",
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "tailwindcss": "^4.1.7",
     "typescript": "^5.8.0",
     "ultracite": "^4.0.0"
   },

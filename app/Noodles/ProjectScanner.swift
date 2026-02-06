@@ -30,69 +30,42 @@ class ProjectScanner {
             var projects: [Project] = []
 
             for url in contents {
-                // LEARN: `try?` silences errors — if resourceValues fails, we get nil and skip.
-                // This double-guard pattern (guard + guard) is idiomatic Swift for "skip items
-                // that don't meet our criteria" — like `continue` with conditions in a for loop.
                 guard let resourceValues = try? url.resourceValues(forKeys: [.isDirectoryKey]),
                       resourceValues.isDirectory == true else {
                     continue
                 }
 
-                // LEARN: `.appendingPathComponent()` = like `path.join()` in Node.
-                // Returns a new URL with the component added. URLs are value types (structs)
-                // so the original is unchanged.
-                let packageJsonURL = url.appendingPathComponent("package.json")
-                guard FileManager.default.fileExists(atPath: packageJsonURL.path) else {
-                    continue
-                }
-
-                // LEARN: `JSONSerialization` is the low-level JSON parser — like `JSON.parse()` in JS.
-                // It returns `Any` (untyped), so you must cast with `as? [String: Any]`.
-                // For typed parsing, you'd use `JSONDecoder` with `Codable` structs (see Models.swift).
-                // This code uses JSONSerialization because package.json has a flexible schema —
-                // not every field is known ahead of time.
-                guard let packageData = try? Data(contentsOf: packageJsonURL),
-                      let packageJson = try? JSONSerialization.jsonObject(with: packageData) as? [String: Any] else {
-                    continue
-                }
-
-                // LEARN: `.lastPathComponent` = like `path.basename()` in Node.
                 let folderName = url.lastPathComponent
-                // LEARN: `(packageJson["name"] as? String) ?? folderName` — safe cast + fallback.
-                // `as? String` = conditional cast. Returns nil if the value isn't a String.
-                // Combined with `??` it's like: `(typeof name === 'string') ? name : folderName`
-                let name = (packageJson["name"] as? String) ?? folderName
 
-                // Detect package manager
-                let packageManager = detectPackageManager(at: url)
+                // Try the directory directly (has its own package.json)
+                if let project = processProjectDirectory(url, id: folderName) {
+                    projects.append(project)
+                    continue
+                }
 
-                // Check if this is a monorepo
-                let workspaces = scanWorkspaces(at: url, packageJson: packageJson, packageManager: packageManager)
+                // No package.json at root — scan one level deeper for nested projects
+                // (e.g. ~/Sites/noodles/site/ where the Swift app root has no package.json)
+                let skipDirs: Set<String> = ["node_modules", "build", "dist"]
+                guard let subContents = try? FileManager.default.contentsOfDirectory(
+                    at: url,
+                    includingPropertiesForKeys: [.isDirectoryKey],
+                    options: [.skipsHiddenFiles]
+                ) else {
+                    continue
+                }
 
-                // Check for dev script (monorepos might not have one at root)
-                let scripts = packageJson["scripts"] as? [String: String]
-                // LEARN: `scripts?["dev"]` — optional chaining on a dictionary subscript.
-                // If scripts is nil OR if "dev" key doesn't exist, this is nil.
-                // Same as TS: `scripts?.["dev"]` or `scripts?.dev`.
-                let devCommand = scripts?["dev"]
+                for subURL in subContents {
+                    guard let subValues = try? subURL.resourceValues(forKeys: [.isDirectoryKey]),
+                          subValues.isDirectory == true,
+                          !skipDirs.contains(subURL.lastPathComponent) else {
+                        continue
+                    }
 
-                // Skip if no dev command AND no workspaces
-                guard devCommand != nil || !workspaces.isEmpty else { continue }
-
-                // Extract expected ports from multiple sources
-                let expectedPorts = detectPorts(at: url, packageJson: packageJson, devCommand: devCommand)
-
-                var project = Project(
-                    id: folderName,
-                    name: name,
-                    path: url.path,
-                    packageManager: packageManager,
-                    devCommand: devCommand,
-                    expectedPorts: expectedPorts
-                )
-                project.workspaces = workspaces
-
-                projects.append(project)
+                    let subId = "\(folderName)/\(subURL.lastPathComponent)"
+                    if let project = processProjectDirectory(subURL, id: subId) {
+                        projects.append(project)
+                    }
+                }
             }
 
             return projects
@@ -100,6 +73,39 @@ class ProjectScanner {
         } catch {
             return []
         }
+    }
+
+    // MARK: - Project Processing
+
+    private func processProjectDirectory(_ url: URL, id: String) -> Project? {
+        let packageJsonURL = url.appendingPathComponent("package.json")
+        guard FileManager.default.fileExists(atPath: packageJsonURL.path),
+              let packageData = try? Data(contentsOf: packageJsonURL),
+              let packageJson = try? JSONSerialization.jsonObject(with: packageData) as? [String: Any] else {
+            return nil
+        }
+
+        let folderName = url.lastPathComponent
+        let name = (packageJson["name"] as? String) ?? folderName
+        let packageManager = detectPackageManager(at: url)
+        let workspaces = scanWorkspaces(at: url, packageJson: packageJson, packageManager: packageManager)
+        let scripts = packageJson["scripts"] as? [String: String]
+        let devCommand = scripts?["dev"]
+
+        guard devCommand != nil || !workspaces.isEmpty else { return nil }
+
+        let expectedPorts = detectPorts(at: url, packageJson: packageJson, devCommand: devCommand)
+
+        var project = Project(
+            id: id,
+            name: name,
+            path: url.path,
+            packageManager: packageManager,
+            devCommand: devCommand,
+            expectedPorts: expectedPorts
+        )
+        project.workspaces = workspaces
+        return project
     }
 
     // MARK: - Monorepo/Workspace Detection

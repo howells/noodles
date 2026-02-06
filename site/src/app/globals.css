@@ -1,1 +1,39 @@
 @import "tailwindcss";
+
+@theme {
+  --font-display: var(--font-display);
+  --font-body: var(--font-body);
+
+  --color-bg: #ffffff;
+  --color-dot: #d4d4d0;
+  --color-dot-glow: #d4d4d1;
+  --color-card: #ffffff;
+  --color-card-text: #1a1a1a;
+  --color-card-text-secondary: #6b6b6b;
+  --color-green: #22c55e;
+  --color-green-glow: rgba(34, 197, 94, 0.35);
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: #ffffff;
+  color: var(--color-card-text);
+  font-family: var(--font-body), system-ui, sans-serif;
+}
+
+::selection {
+  background: hsl(142 71% 45% / 0.2);
+  color: inherit;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
