@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Combine
 import ServiceManagement
@@ -10,14 +11,20 @@ class AppState: ObservableObject {
         }
     }
     @Published var ports: [PortInfo] = []
+    @Published var managedServers: [ManagedServerInfo] = []
     @Published var isScanning = false
     @Published var filter = ""
     @Published var config: Config
     @Published var showHidden = false
 
-    private var portPollingTimer: Timer?
-    private let processManager = ProcessManager()
+    // Exposed for cleanup in applicationWillTerminate
+    var portPollingTimer: Timer?
+    let processManager = ProcessManager()
+
     private let scanner = ProjectScanner()
+    private var managedProjectServers: [String: UUID] = [:]
+    private var managedWorkspaceServers: [String: UUID] = [:]
+    private var isPolling = false
 
     init() {
         self.config = ConfigManager.load()
@@ -28,43 +35,47 @@ class AppState: ObservableObject {
         portPollingTimer = nil
     }
 
-    func cleanup() async {
-        portPollingTimer?.invalidate()
-        portPollingTimer = nil
-        await processManager.cleanupSpawnedProcesses()
-    }
+    // MARK: - Scanning
 
     func scan() {
+        guard !isScanning else { return }
         NSLog("Noodles: scan() called")
         isScanning = true
 
-        var scannedProjects = scanner.scan(sitesPath: config.sitesPath)
-        NSLog("Noodles: Got %d scanned projects", scannedProjects.count)
+        // Capture config as a value type before entering the detached task
+        let capturedConfig = config
 
-        // Apply custom ports from config
-        for i in scannedProjects.indices {
-            if let customPort = config.customPorts[scannedProjects[i].id] {
-                scannedProjects[i].customPort = customPort
+        Task.detached { [scanner] in
+            let scannedProjects = scanner.scan(sitesPath: capturedConfig.sitesPath)
+            NSLog("Noodles: Got %d scanned projects", scannedProjects.count)
+
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                var projects = scannedProjects
+                for i in projects.indices {
+                    if let customPort = capturedConfig.customPorts[projects[i].id] {
+                        projects[i].customPort = customPort
+                    }
+                }
+                self.projects = projects.sorted { a, b in
+                    a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
+                }
+                NSLog("Noodles: Set projects array, count = %d", self.projects.count)
+                self.isScanning = false
+                self.startPortPolling()
             }
         }
-
-        // Set projects immediately (without port matching first)
-        self.projects = scannedProjects.sorted { a, b in
-            a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
-        }
-
-        NSLog("Noodles: Set projects array, count = %d", self.projects.count)
-        self.isScanning = false
-
-        // Start port polling after initial load
-        startPortPolling()
     }
+
+    // MARK: - Project Start/Stop
 
     func startProject(_ project: Project) {
         guard let index = projects.firstIndex(where: { $0.id == project.id }) else { return }
-        projects[index].status = .starting
+        if projects[index].status != .restarting {
+            projects[index].status = .starting
+        }
+        projects[index].error = nil
 
-        // Build the dev command
         var args = [project.packageManager.command] + project.packageManager.devArgs
         if let port = project.customPort {
             args.append("--port")
@@ -72,23 +83,52 @@ class AppState: ObservableObject {
         }
         let devCommand = args.joined(separator: " ")
 
-        // Open terminal and run dev command
-        processManager.openInTerminal(path: project.path, terminal: config.terminal, command: devCommand)
+        if config.runManagedServers {
+            Task {
+                do {
+                    // Clean up old managed server if restarting
+                    if let oldId = self.managedProjectServers[project.id] {
+                        await processManager.removeManagedServer(id: oldId)
+                    }
+
+                    let id = try await processManager.startManagedServer(
+                        path: project.path,
+                        packageManager: project.packageManager,
+                        customPort: project.customPort,
+                        label: project.name
+                    )
+                    self.managedProjectServers[project.id] = id
+                } catch {
+                    if let idx = self.projects.firstIndex(where: { $0.id == project.id }) {
+                        self.projects[idx].status = .error
+                        self.projects[idx].error = error.localizedDescription
+                    }
+                }
+            }
+        } else {
+            processManager.openInTerminal(path: project.path, terminal: config.terminal, command: devCommand)
+            refocusSelf()
+        }
     }
 
     func stopProject(_ project: Project) {
         guard let index = projects.firstIndex(where: { $0.id == project.id }) else { return }
         projects[index].status = .stopping
 
+        if let serverId = managedProjectServers[project.id] {
+            Task {
+                await processManager.stopManagedServer(id: serverId)
+            }
+            return
+        }
+
         Task {
             do {
                 try await processManager.stopProjectProcesses(projectPath: project.path)
             } catch {
-                await MainActor.run {
-                    if let idx = self.projects.firstIndex(where: { $0.id == project.id }) {
-                        self.projects[idx].status = .error
-                        self.projects[idx].error = error.localizedDescription
-                    }
+                if let idx = self.projects.firstIndex(where: { $0.id == project.id }) {
+                    self.projects[idx].status = .error
+                    self.projects[idx].error = error.localizedDescription
                 }
             }
         }
@@ -103,14 +143,39 @@ class AppState: ObservableObject {
         }
 
         projects[projectIndex].workspaces[workspaceIndex].status = .starting
+        projects[projectIndex].workspaces[workspaceIndex].error = nil
 
-        // Build the turbo filter command
-        // For pnpm monorepos: pnpm dev --filter=workspace-name
-        let args = [project.packageManager.command, "dev", "--filter", workspace.name]
+        let args = [project.packageManager.command] + project.packageManager.workspaceDevArgs(filter: workspace.name)
         let devCommand = args.joined(separator: " ")
 
-        // Open terminal and run dev command from the monorepo root
-        processManager.openInTerminal(path: project.path, terminal: config.terminal, command: devCommand)
+        if config.runManagedServers {
+            Task {
+                do {
+                    // Clean up old managed server if restarting
+                    if let oldId = self.managedWorkspaceServers[workspace.id] {
+                        await processManager.removeManagedServer(id: oldId)
+                    }
+
+                    let id = try await processManager.startManagedServer(
+                        path: project.path,
+                        packageManager: project.packageManager,
+                        customPort: nil,
+                        filterWorkspace: workspace.name,
+                        label: "\(project.name)/\(workspace.name)"
+                    )
+                    self.managedWorkspaceServers[workspace.id] = id
+                } catch {
+                    if let pIdx = self.projects.firstIndex(where: { $0.id == project.id }),
+                       let wIdx = self.projects[pIdx].workspaces.firstIndex(where: { $0.id == workspace.id }) {
+                        self.projects[pIdx].workspaces[wIdx].status = .error
+                        self.projects[pIdx].workspaces[wIdx].error = error.localizedDescription
+                    }
+                }
+            }
+        } else {
+            processManager.openInTerminal(path: project.path, terminal: config.terminal, command: devCommand)
+            refocusSelf()
+        }
     }
 
     func stopWorkspace(_ workspace: Workspace, in project: Project) {
@@ -121,35 +186,54 @@ class AppState: ObservableObject {
 
         projects[projectIndex].workspaces[workspaceIndex].status = .stopping
 
+        if let serverId = managedWorkspaceServers[workspace.id] {
+            Task {
+                await processManager.stopManagedServer(id: serverId)
+            }
+            return
+        }
+
         Task {
             do {
                 try await processManager.stopProjectProcesses(projectPath: workspace.path)
             } catch {
-                await MainActor.run {
-                    if let pIdx = self.projects.firstIndex(where: { $0.id == project.id }),
-                       let wIdx = self.projects[pIdx].workspaces.firstIndex(where: { $0.id == workspace.id }) {
-                        self.projects[pIdx].workspaces[wIdx].status = .error
-                        self.projects[pIdx].workspaces[wIdx].error = error.localizedDescription
-                    }
+                if let pIdx = self.projects.firstIndex(where: { $0.id == project.id }),
+                   let wIdx = self.projects[pIdx].workspaces.firstIndex(where: { $0.id == workspace.id }) {
+                    self.projects[pIdx].workspaces[wIdx].status = .error
+                    self.projects[pIdx].workspaces[wIdx].error = error.localizedDescription
                 }
             }
         }
     }
 
+    // MARK: - Restart
+
     func restartProject(_ project: Project) {
         guard let index = projects.firstIndex(where: { $0.id == project.id }) else { return }
-        projects[index].status = .stopping
+        projects[index].status = .restarting
+
+        if let serverId = managedProjectServers[project.id] {
+            Task {
+                await processManager.stopManagedServer(id: serverId)
+                do {
+                    try await Task.sleep(nanoseconds: 500_000_000)
+                } catch {
+                    // Task.sleep cancelled — check if we should abort (e.g., app terminating)
+                    guard !Task.isCancelled else { return }
+                }
+                self.managedProjectServers.removeValue(forKey: project.id)
+                self.startProject(project)
+            }
+            return
+        }
 
         Task {
             do {
                 try await processManager.stopProjectProcesses(projectPath: project.path)
-                // Wait for port to be released
                 try await Task.sleep(nanoseconds: 500_000_000)
-                await MainActor.run {
-                    self.startProject(project)
-                }
+                self.startProject(project)
             } catch {
-                await MainActor.run {
+                if !Task.isCancelled {
                     if let idx = self.projects.firstIndex(where: { $0.id == project.id }) {
                         self.projects[idx].status = .error
                         self.projects[idx].error = error.localizedDescription
@@ -159,126 +243,244 @@ class AppState: ObservableObject {
         }
     }
 
+    // MARK: - External Actions
+
     func openInBrowser(port: Int) {
         processManager.openInBrowser(port: port)
     }
 
     func openInEditor(path: String) {
-        processManager.openInEditor(path: path, editor: config.editor)
+        if config.editor == "claude-code" {
+            processManager.openInTerminal(path: path, terminal: config.terminal, command: "claude")
+        } else {
+            processManager.openInEditor(path: path, editor: config.editor)
+        }
     }
 
     func openInTerminal(path: String, command: String? = nil) {
         processManager.openInTerminal(path: path, terminal: config.terminal, command: command)
     }
 
+    func managedServerId(for project: Project) -> UUID? {
+        managedProjectServers[project.id]
+    }
+
+    func managedServerId(for workspace: Workspace) -> UUID? {
+        managedWorkspaceServers[workspace.id]
+    }
+
+    func managedServerInfo(id: UUID) -> ManagedServerInfo? {
+        managedServers.first { $0.id == id }
+    }
+
+    func stopManagedServer(id: UUID, force: Bool = false) {
+        Task {
+            await processManager.stopManagedServer(id: id, force: force)
+        }
+    }
+
+    func logSnapshot(id: UUID, tail: Int) async -> [String] {
+        await processManager.getLogSnapshot(id: id, tail: tail)
+    }
+
+    // MARK: - Port Polling
+
     private func startPortPolling() {
         // Initial port refresh
-        refreshPortsSync()
+        refreshPorts()
 
-        portPollingTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+        let interval = max(0.5, Double(config.pollIntervalMs) / 1000.0)
+        portPollingTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             DispatchQueue.main.async {
-                self?.refreshPortsSync()
+                self?.refreshPorts()
             }
         }
     }
 
-    private func refreshPortsSync() {
+    /// Refresh port data from lsof. Guarded so only one poll runs at a time —
+    /// if the previous poll is still in-flight, this call is skipped.
+    private func refreshPorts() {
+        guard !isPolling else { return }
+        isPolling = true
+
         Task {
             let currentPorts = await processManager.getListeningPorts()
+            let currentManagedServers = await processManager.getManagedServers()
+            let managedById = Dictionary(uniqueKeysWithValues: currentManagedServers.map { ($0.id, $0) })
 
-            // AppState is @MainActor so we're already on main
             self.ports = currentPorts
+            self.managedServers = currentManagedServers
 
-            // Create updated projects array to trigger SwiftUI update
             var updatedProjects = self.projects
 
             for i in updatedProjects.indices {
+                var project = updatedProjects[i]
                 let projectPorts = currentPorts.filter { port in
                     guard let cwd = port.cwd else { return false }
-                    return cwd.hasPrefix(updatedProjects[i].path)
+                    return cwd.hasPrefix(project.path)
                 }
 
-                updatedProjects[i].runningPorts = projectPorts
+                project.runningPorts = projectPorts
 
                 // Update workspace statuses for monorepos
-                for j in updatedProjects[i].workspaces.indices {
-                    let workspacePath = updatedProjects[i].workspaces[j].path
-                    let workspaceRelPath = updatedProjects[i].workspaces[j].relativePath  // e.g., "apps/web"
+                for j in project.workspaces.indices {
+                    var workspace = project.workspaces[j]
+                    let workspacePath = workspace.path
+                    let workspaceRelPath = workspace.relativePath
 
-                    // Match by cwd - try multiple strategies
                     var workspacePorts = currentPorts.filter { port in
                         guard let cwd = port.cwd else { return false }
-                        // Direct prefix match
                         if cwd.hasPrefix(workspacePath) { return true }
-                        // Check if cwd contains the relative path within the project
-                        if cwd.hasPrefix(updatedProjects[i].path) && cwd.contains(workspaceRelPath) { return true }
+                        if cwd.hasPrefix(project.path) && cwd.contains(workspaceRelPath) { return true }
                         return false
                     }
 
-                    // Fallback: match by expected port when cwd matching fails
-                    // This handles turbo dev where processes may run from monorepo root
+                    // Fallback: match by expected port for turbo dev
                     if workspacePorts.isEmpty {
-                        let expectedPorts = Set(updatedProjects[i].workspaces[j].expectedPorts)
+                        let expectedPorts = Set(workspace.expectedPorts)
                         if !expectedPorts.isEmpty {
-                            // Match from all project ports OR all current ports with matching expected port
                             workspacePorts = currentPorts.filter { port in
                                 guard expectedPorts.contains(port.port) else { return false }
-                                // Verify it's related to this project (cwd within project, or no cwd)
                                 if let cwd = port.cwd {
-                                    return cwd.hasPrefix(updatedProjects[i].path)
+                                    return cwd.hasPrefix(project.path)
                                 }
-                                return true  // No cwd info, trust the port match
+                                return true
                             }
                         }
                     }
 
-                    updatedProjects[i].workspaces[j].runningPorts = workspacePorts
+                    workspace.runningPorts = workspacePorts
 
-                    if updatedProjects[i].workspaces[j].status == .starting || updatedProjects[i].workspaces[j].status == .stopping {
-                        if !workspacePorts.isEmpty && updatedProjects[i].workspaces[j].status == .starting {
-                            updatedProjects[i].workspaces[j].status = .running
-                        } else if workspacePorts.isEmpty && updatedProjects[i].workspaces[j].status == .stopping {
-                            updatedProjects[i].workspaces[j].status = .stopped
+                    if workspace.status == .starting || workspace.status == .stopping {
+                        if !workspacePorts.isEmpty && workspace.status == .starting {
+                            workspace.status = .running
+                        } else if workspacePorts.isEmpty && workspace.status == .stopping {
+                            workspace.status = .stopped
                         }
-                    } else if updatedProjects[i].workspaces[j].status != .error {
-                        updatedProjects[i].workspaces[j].status = workspacePorts.isEmpty ? .stopped : .running
+                    } else if workspace.status != .error {
+                        workspace.status = workspacePorts.isEmpty ? .stopped : .running
                     }
+
+                    if let serverId = managedWorkspaceServers[workspace.id],
+                       let managedInfo = managedById[serverId] {
+                        var status = workspace.status
+                        var error = workspace.error
+                        applyManagedStatus(managedInfo, status: &status, error: &error)
+                        workspace.status = status
+                        workspace.error = error
+                    }
+
+                    project.workspaces[j] = workspace
                 }
 
-                // For non-monorepos, update project status as before
-                if !updatedProjects[i].isMonorepo {
-                    if updatedProjects[i].status == .starting || updatedProjects[i].status == .stopping {
-                        if !projectPorts.isEmpty && updatedProjects[i].status == .starting {
-                            updatedProjects[i].status = .running
-                        } else if projectPorts.isEmpty && updatedProjects[i].status == .stopping {
-                            updatedProjects[i].status = .stopped
+                if !project.isMonorepo {
+                    let wasStarting = project.status == .starting
+
+                    if project.status == .starting || project.status == .stopping || project.status == .restarting {
+                        if !projectPorts.isEmpty && (project.status == .starting || project.status == .restarting) {
+                            project.status = .running
+                        } else if projectPorts.isEmpty && project.status == .stopping {
+                            project.status = .stopped
                         }
-                    } else if updatedProjects[i].status != .error {
-                        updatedProjects[i].status = projectPorts.isEmpty ? .stopped : .running
+                        // .restarting with no ports yet → stays .restarting
+                    } else if project.status != .error {
+                        project.status = projectPorts.isEmpty ? .stopped : .running
+                    }
+
+                    if let serverId = managedProjectServers[project.id],
+                       let managedInfo = managedById[serverId] {
+                        // While starting with no ports: process is alive but dev server
+                        // hasn't bound a port yet. Stay .starting unless process died.
+                        if wasStarting && projectPorts.isEmpty && managedInfo.isRunning && managedInfo.stopRequestedAt == nil {
+                            project.status = .starting
+                        } else {
+                            var status = project.status
+                            var error = project.error
+                            applyManagedStatus(managedInfo, status: &status, error: &error)
+                            project.status = status
+                            project.error = error
+                        }
                     }
                 } else {
-                    // For monorepos, project is "running" if any workspace is running
-                    let anyWorkspaceRunning = updatedProjects[i].workspaces.contains { $0.status == .running }
-                    if updatedProjects[i].status != .starting && updatedProjects[i].status != .stopping && updatedProjects[i].status != .error {
-                        updatedProjects[i].status = anyWorkspaceRunning ? .running : .stopped
+                    // Monorepo: check project-level managed server first (from startProject/restartProject)
+                    if let serverId = managedProjectServers[project.id],
+                       let managedInfo = managedById[serverId] {
+                        var status = project.status
+                        var error = project.error
+                        applyManagedStatus(managedInfo, status: &status, error: &error)
+                        project.status = status
+                        project.error = error
+                    } else {
+                        // No project-level managed server — derive from workspace states
+                        let anyWorkspaceRunning = project.workspaces.contains { $0.status == .running }
+                        if project.status == .restarting {
+                            // Only exit .restarting when a workspace comes up
+                            if anyWorkspaceRunning { project.status = .running }
+                        } else if project.status != .error {
+                            if anyWorkspaceRunning {
+                                project.status = .running
+                            } else {
+                                project.status = .stopped
+                            }
+                        }
                     }
                 }
+
+                updatedProjects[i] = project
             }
 
-            // Assign new array to trigger @Published update
             self.projects = updatedProjects
+            self.isPolling = false
         }
     }
+
+    private func applyManagedStatus(_ info: ManagedServerInfo, status: inout ProjectStatus, error: inout String?) {
+        // During restart, only allow transition to .running (when the new server is up)
+        if status == .restarting {
+            if info.isRunning && info.stopRequestedAt == nil {
+                status = .running
+                error = nil
+            }
+            return
+        }
+
+        if info.isRunning {
+            status = info.stopRequestedAt == nil ? .running : .stopping
+            error = nil
+            return
+        }
+
+        if let exitCode = info.exitCode {
+            if exitCode == 0 || info.stopRequestedAt != nil {
+                status = .stopped
+                error = nil
+            } else {
+                status = .error
+                error = "Exited with code \(exitCode)"
+            }
+            return
+        }
+
+        if info.stopRequestedAt != nil {
+            status = .stopped
+            error = nil
+            return
+        }
+
+        if status != .starting && status != .stopping {
+            status = .stopped
+        }
+    }
+
+    // MARK: - Computed Properties
 
     var filteredProjects: [Project] {
         var result = projects
 
-        // Exclude hidden projects unless showHidden is true
         if !showHidden {
             result = result.filter { !isHidden($0) }
         }
 
-        // Apply search filter
         if !filter.isEmpty {
             result = result.filter {
                 $0.name.localizedCaseInsensitiveContains(filter) ||
@@ -290,28 +492,43 @@ class AppState: ObservableObject {
     }
 
     var runningProjects: [Project] {
-        filteredProjects.filter { $0.status == .running }
+        filteredProjects.filter {
+            $0.status == .running || $0.status == .restarting || $0.status == .stopping
+        }
     }
 
     var stoppedProjects: [Project] {
-        filteredProjects.filter { $0.status != .running }
+        filteredProjects.filter {
+            $0.status != .running && $0.status != .restarting && $0.status != .stopping
+        }
     }
 
-    var favoriteProjects: [Project] {
-        filteredProjects.filter { isFavorite($0) }
+    var unmatchedPorts: [PortInfo] {
+        var matched = Set<String>()
+        for project in projects {
+            matched.formUnion(project.runningPorts.map { $0.id })
+            for workspace in project.workspaces {
+                matched.formUnion(workspace.runningPorts.map { $0.id })
+            }
+        }
+        return ports.filter { !matched.contains($0.id) }
     }
 
-    // MARK: - Favorites
-
-    func isFavorite(_ project: Project) -> Bool {
-        config.favorites.contains(project.id)
+    var pinnedProjects: [Project] {
+        filteredProjects.filter { isPinned($0) }
     }
 
-    func toggleFavorite(_ project: Project) {
-        if isFavorite(project) {
-            config.favorites.removeAll { $0 == project.id }
+    // MARK: - Pinned Projects
+
+    func isPinned(_ project: Project) -> Bool {
+        config.pinned.contains(project.id)
+    }
+
+    func togglePinned(_ project: Project) {
+        if isPinned(project) {
+            config.pinned.removeAll { $0 == project.id }
         } else {
-            config.favorites.append(project.id)
+            config.pinned.append(project.id)
         }
         ConfigManager.save(config)
     }
@@ -361,7 +578,8 @@ class AppState: ObservableObject {
         }
     }
 
-    // Port conflict detection (uses effective port: custom if set, else first expected)
+    // MARK: - Port Conflicts
+
     var portConflicts: [Int: [Project]] {
         var portToProjects: [Int: [Project]] = [:]
 
@@ -371,7 +589,6 @@ class AppState: ObservableObject {
             }
         }
 
-        // Only return ports with conflicts (more than one project)
         return portToProjects.filter { $0.value.count > 1 }
     }
 
@@ -396,8 +613,13 @@ class AppState: ObservableObject {
         return false
     }
 
+    private func refocusSelf() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            NSApp.activate(ignoringOtherApps: true)
+        }
+    }
+
     func setCustomPort(for project: Project, port: Int?) {
-        // Update config
         if let port = port {
             config.customPorts[project.id] = port
         } else {
@@ -405,7 +627,6 @@ class AppState: ObservableObject {
         }
         ConfigManager.save(config)
 
-        // Update project in memory
         if let index = projects.firstIndex(where: { $0.id == project.id }) {
             projects[index].customPort = port
         }
