@@ -1,12 +1,26 @@
 import Foundation
 
+// LEARN: This is a plain `class` (not struct, not actor, not ObservableObject).
+// It's a simple service — no UI bindings, no concurrency concerns.
+// All methods are synchronous and called from the main thread.
+// In TS terms, this would just be a module with exported functions, or a plain class.
 class ProjectScanner {
 
     func scan(sitesPath: String) -> [Project] {
         let expandedPath = (sitesPath as NSString).expandingTildeInPath
+        // LEARN: `URL(fileURLWithPath:)` creates a file:// URL from a path.
+        // Swift uses URL for both web URLs and file paths — one type for everything.
+        // In Node you'd use `path.resolve()` for file paths and `new URL()` for web URLs.
         let sitesURL = URL(fileURLWithPath: expandedPath)
 
+        // LEARN: `do { ... } catch { ... }` — the entire scan is wrapped in error handling.
+        // `try` before `FileManager.default.contentsOfDirectory` means this call can throw.
+        // If the directory doesn't exist or can't be read, we fall through to `catch` and return [].
         do {
+            // LEARN: `FileManager.default` is a singleton — like Node's `fs` module.
+            // `.contentsOfDirectory(at:...)` = like `fs.readdirSync()` but returns URL objects.
+            // `includingPropertiesForKeys: [.isDirectoryKey]` — pre-fetches directory metadata
+            // in one system call instead of calling stat() separately for each entry. Performance trick.
             let contents = try FileManager.default.contentsOfDirectory(
                 at: sitesURL,
                 includingPropertiesForKeys: [.isDirectoryKey],
@@ -16,22 +30,37 @@ class ProjectScanner {
             var projects: [Project] = []
 
             for url in contents {
+                // LEARN: `try?` silences errors — if resourceValues fails, we get nil and skip.
+                // This double-guard pattern (guard + guard) is idiomatic Swift for "skip items
+                // that don't meet our criteria" — like `continue` with conditions in a for loop.
                 guard let resourceValues = try? url.resourceValues(forKeys: [.isDirectoryKey]),
                       resourceValues.isDirectory == true else {
                     continue
                 }
 
+                // LEARN: `.appendingPathComponent()` = like `path.join()` in Node.
+                // Returns a new URL with the component added. URLs are value types (structs)
+                // so the original is unchanged.
                 let packageJsonURL = url.appendingPathComponent("package.json")
                 guard FileManager.default.fileExists(atPath: packageJsonURL.path) else {
                     continue
                 }
 
+                // LEARN: `JSONSerialization` is the low-level JSON parser — like `JSON.parse()` in JS.
+                // It returns `Any` (untyped), so you must cast with `as? [String: Any]`.
+                // For typed parsing, you'd use `JSONDecoder` with `Codable` structs (see Models.swift).
+                // This code uses JSONSerialization because package.json has a flexible schema —
+                // not every field is known ahead of time.
                 guard let packageData = try? Data(contentsOf: packageJsonURL),
                       let packageJson = try? JSONSerialization.jsonObject(with: packageData) as? [String: Any] else {
                     continue
                 }
 
+                // LEARN: `.lastPathComponent` = like `path.basename()` in Node.
                 let folderName = url.lastPathComponent
+                // LEARN: `(packageJson["name"] as? String) ?? folderName` — safe cast + fallback.
+                // `as? String` = conditional cast. Returns nil if the value isn't a String.
+                // Combined with `??` it's like: `(typeof name === 'string') ? name : folderName`
                 let name = (packageJson["name"] as? String) ?? folderName
 
                 // Detect package manager
@@ -42,6 +71,9 @@ class ProjectScanner {
 
                 // Check for dev script (monorepos might not have one at root)
                 let scripts = packageJson["scripts"] as? [String: String]
+                // LEARN: `scripts?["dev"]` — optional chaining on a dictionary subscript.
+                // If scripts is nil OR if "dev" key doesn't exist, this is nil.
+                // Same as TS: `scripts?.["dev"]` or `scripts?.dev`.
                 let devCommand = scripts?["dev"]
 
                 // Skip if no dev command AND no workspaces
@@ -78,7 +110,12 @@ class ProjectScanner {
 
         // 1. Check pnpm-workspace.yaml
         let pnpmWorkspaceURL = url.appendingPathComponent("pnpm-workspace.yaml")
+        // LEARN: `try? String(contentsOf:encoding:)` — reads an entire file into a String.
+        // Like `fs.readFileSync(path, 'utf8')` in Node. The `try?` returns nil if the file
+        // doesn't exist or can't be read (instead of throwing).
         if let pnpmContent = try? String(contentsOf: pnpmWorkspaceURL, encoding: .utf8) {
+            // LEARN: `.append(contentsOf:)` adds all elements of another array — like JS `.push(...items)`.
+            // `.append()` (without contentsOf) adds a single element — like JS `.push(item)`.
             workspaceGlobs.append(contentsOf: parseWorkspaceGlobs(from: pnpmContent))
         }
 
@@ -112,6 +149,12 @@ class ProjectScanner {
             }
         }
 
+        // In turborepo projects, only show workspaces under apps/ — packages/ are
+        // shared libraries that aren't runnable dev servers even if they have a dev script.
+        if hasTurbo {
+            workspaces = workspaces.filter { $0.relativePath.hasPrefix("apps/") }
+        }
+
         return workspaces.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
@@ -122,6 +165,9 @@ class ProjectScanner {
         var inPackages = false
 
         for line in yamlContent.components(separatedBy: .newlines) {
+            // LEARN: `.trimmingCharacters(in:)` = like `.trim()` in JS.
+            // `.whitespaces` trims spaces/tabs. `.whitespacesAndNewlines` also trims \n.
+            // You can use predefined CharacterSets or create custom ones.
             let trimmed = line.trimmingCharacters(in: .whitespaces)
 
             if trimmed.hasPrefix("packages:") {
@@ -131,8 +177,11 @@ class ProjectScanner {
 
             if inPackages {
                 if trimmed.hasPrefix("- ") {
+                    // LEARN: `.dropFirst(2)` returns a Substring with the first 2 characters removed.
+                    // Like `.slice(2)` in JS. Returns a Substring (view), not a new String.
                     let glob = String(trimmed.dropFirst(2)).trimmingCharacters(in: .whitespaces)
-                    // Remove quotes if present
+                    // LEARN: `CharacterSet(charactersIn:)` creates a custom set of characters.
+                    // Used here to strip quotes — like a regex `/['"]/g` replacement in JS.
                     let cleanGlob = glob.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
                     globs.append(cleanGlob)
                 } else if !trimmed.isEmpty && !trimmed.hasPrefix("#") {
@@ -154,6 +203,7 @@ class ProjectScanner {
             .replacingOccurrences(of: "/**", with: "/*")
             .replacingOccurrences(of: "/**/", with: "/*/")
 
+        // LEARN: `.hasSuffix()` = like `.endsWith()` in JS. `.hasPrefix()` = `.startsWith()`.
         if normalizedGlob.hasSuffix("/*") {
             let parentPath = String(normalizedGlob.dropLast(2))
             let parentURL = baseURL.appendingPathComponent(parentPath)
@@ -204,6 +254,9 @@ class ProjectScanner {
     }
 
     private func scanWorkspaceDirectory(_ url: URL, relativeTo baseURL: URL, packageManager: PackageManager) -> Workspace? {
+        // Skip if workspace points to the monorepo root itself
+        if url.path == baseURL.path { return nil }
+
         let packageJsonURL = url.appendingPathComponent("package.json")
 
         guard let packageData = try? Data(contentsOf: packageJsonURL),
@@ -237,10 +290,15 @@ class ProjectScanner {
     }
 
     private func detectPorts(at url: URL, packageJson: [String: Any], devCommand: String?) -> [Int] {
+        // LEARN: `Set<Int>` is used to avoid duplicates during collection.
+        // At the end, it's converted to a sorted Array.
+        // Same pattern as `new Set()` → `[...set].sort()` in JS.
         var ports = Set<Int>()
 
         // 1. Extract from dev command
         if let cmd = devCommand {
+            // LEARN: `.formUnion()` = mutating union. Adds all elements from another set.
+            // Like `otherSet.forEach(s => mySet.add(s))` in JS, but one method call.
             ports.formUnion(extractPortsFromCommand(cmd))
         }
 
@@ -328,10 +386,19 @@ class ProjectScanner {
             "\\s(9\\d{3})(?:\\s|$)",   // 9000-9999
         ]
 
+        // LEARN: `NSRegularExpression` is Swift's regex API — more verbose than JS's `/pattern/`.
+        // `try?` because the pattern might be invalid (returns nil instead of crashing).
+        // Swift 5.7+ also supports `/regex/` literals (like JS), but this code uses the older API.
+        //
+        // `NSRange(cmd.startIndex..., in: cmd)` — converts a Swift String range to an NSRange.
+        // This bridging is needed because NSRegularExpression is an Objective-C API that uses
+        // NSRange (integer-based) while Swift strings use String.Index (Unicode-aware).
         for pattern in patterns {
             if let regex = try? NSRegularExpression(pattern: pattern) {
                 let matches = regex.matches(in: cmd, range: NSRange(cmd.startIndex..., in: cmd))
                 for match in matches {
+                    // LEARN: `Range(match.range(at: 1), in: cmd)` — converts NSRange back to Swift Range.
+                    // `range(at: 1)` gets the first capture group (like `match[1]` in JS regex).
                     if let range = Range(match.range(at: 1), in: cmd),
                        let port = Int(cmd[range]) {
                         ports.insert(port)

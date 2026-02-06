@@ -1,7 +1,10 @@
 import SwiftUI
 
 struct ProjectCard: View {
+    // LEARN: `let` properties on a View struct = props in React. They're passed in by the parent
+    // and are immutable within this view. `@State` properties are local mutable state.
     let project: Project
+    let onShowLogs: (LogTarget) -> Void
     @EnvironmentObject var appState: AppState
     @State private var showingPortSheet = false
     @State private var portInput = ""
@@ -14,6 +17,12 @@ struct ProjectCard: View {
                 // Status indicator / Expand toggle for monorepos
                 if project.isMonorepo {
                     Button {
+                        // LEARN: `withAnimation` wraps a state change in an animation.
+                        // SwiftUI automatically animates any view changes caused by the
+                        // state mutation inside this block. Like React's `framer-motion`
+                        // but built into the framework — no extra library needed.
+                        //
+                        // `.toggle()` flips a Bool — like `setExpanded(!expanded)` in React.
                         withAnimation(.easeInOut(duration: 0.2)) {
                             isExpanded.toggle()
                         }
@@ -21,13 +30,12 @@ struct ProjectCard: View {
                         Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundColor(.secondary)
-                            .frame(width: 12, height: 12)
+                            .frame(width: 24, height: 24)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                 } else {
-                    Circle()
-                        .fill(statusColor)
-                        .frame(width: 8, height: 8)
+                    StatusDot(color: statusColor, size: 8)
                 }
 
                 // Project info
@@ -83,7 +91,15 @@ struct ProjectCard: View {
 
                 // Action buttons - show for non-monorepos, or monorepos with dev command
                 if !project.isMonorepo || project.devCommand != nil {
-                    ActionButtons(project: project)
+                    let managedServerId = appState.managedServerId(for: project)
+                    ActionButtons(
+                        project: project,
+                        showLogs: managedServerId != nil,
+                        onShowLogs: {
+                            guard let id = managedServerId else { return }
+                            onShowLogs(LogTarget(id: id, title: project.name))
+                        }
+                    )
                 } else {
                     // Just show editor button for monorepos without dev command
                     IconButton(icon: "rectangle.and.pencil.and.ellipsis", help: "Open in editor") {
@@ -93,14 +109,64 @@ struct ProjectCard: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
+            // LEARN: `.contentShape(Rectangle())` makes the ENTIRE row tappable/right-clickable,
+            // not just the text/icons. Without this, only visible content receives clicks.
+            // Like setting `pointer-events: all` on a flex container in CSS.
             .contentShape(Rectangle())
+            // LEARN: `.contextMenu` = right-click menu. Like `onContextMenu` in React.
+            // SwiftUI builds the menu declaratively — just list the items.
             .contextMenu {
-                Button(appState.isFavorite(project) ? "Remove from Favorites" : "Add to Favorites") {
-                    appState.toggleFavorite(project)
+                // Server actions
+                if !project.isMonorepo || project.devCommand != nil {
+                    if project.status == .running {
+                        Button("Restart Server") {
+                            appState.restartProject(project)
+                        }
+                        Button("Stop Server") {
+                            appState.stopProject(project)
+                        }
+                    } else if project.status == .stopped || project.status == .error {
+                        Button("Start Server") {
+                            appState.startProject(project)
+                        }
+                    }
+                }
+
+                if let managedId = appState.managedServerId(for: project) {
+                    Button("View Logs") {
+                        onShowLogs(LogTarget(id: managedId, title: project.name))
+                    }
+                }
+
+                Divider()
+
+                // Open actions
+                if project.status == .running, let port = project.browserPort {
+                    Button("Open in Browser") {
+                        appState.openInBrowser(port: port)
+                    }
+                }
+                Button("Open in Editor") {
+                    appState.openInEditor(path: project.path)
+                }
+                Button("Open in Terminal") {
+                    appState.openInTerminal(path: project.path)
+                }
+                Button("Open in Finder") {
+                    NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: project.path)
+                }
+
+                Divider()
+
+                // Organization
+                Button(appState.isPinned(project) ? "Unpin" : "Pin to Top") {
+                    appState.togglePinned(project)
                 }
                 Button(appState.isHidden(project) ? "Unhide Project" : "Hide Project") {
                     appState.toggleHidden(project)
                 }
+
+                // Port config
                 if !project.isMonorepo {
                     Divider()
                     Button("Set Custom Port...") {
@@ -113,20 +179,13 @@ struct ProjectCard: View {
                         }
                     }
                 }
-                Divider()
-                Button("Open in Finder") {
-                    NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: project.path)
-                }
-                Button("Open in Terminal") {
-                    appState.openInTerminal(path: project.path)
-                }
             }
 
             // Workspaces section (for monorepos)
             if project.isMonorepo && isExpanded {
                 VStack(spacing: 2) {
                     ForEach(project.workspaces) { workspace in
-                        WorkspaceCard(workspace: workspace, project: project)
+                        WorkspaceCard(workspace: workspace, project: project, onShowLogs: onShowLogs)
                     }
                 }
                 .padding(.leading, 20)
@@ -147,24 +206,28 @@ struct ProjectCard: View {
     var statusColor: Color {
         switch project.status {
         case .running: return .green
-        case .starting, .stopping: return .orange
+        case .starting, .stopping, .restarting: return .orange
         case .error: return .red
         case .stopped: return Color.secondary.opacity(0.4)
         }
     }
 }
 
+struct LogTarget: Identifiable {
+    let id: UUID
+    let title: String
+}
+
 struct WorkspaceCard: View {
     let workspace: Workspace
     let project: Project
+    let onShowLogs: (LogTarget) -> Void
     @EnvironmentObject var appState: AppState
 
     var body: some View {
         HStack(spacing: 8) {
             // Status indicator
-            Circle()
-                .fill(statusColor)
-                .frame(width: 6, height: 6)
+            StatusDot(color: statusColor, size: 6)
 
             // Workspace info
             VStack(alignment: .leading, spacing: 1) {
@@ -192,7 +255,16 @@ struct WorkspaceCard: View {
             }
 
             // Action buttons
-            WorkspaceActionButtons(workspace: workspace, project: project)
+            let managedServerId = appState.managedServerId(for: workspace)
+            WorkspaceActionButtons(
+                workspace: workspace,
+                project: project,
+                showLogs: managedServerId != nil,
+                onShowLogs: {
+                    guard let id = managedServerId else { return }
+                    onShowLogs(LogTarget(id: id, title: "\(project.name)/\(workspace.name)"))
+                }
+            )
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
@@ -201,11 +273,39 @@ struct WorkspaceCard: View {
                 .fill(Color(NSColor.controlBackgroundColor).opacity(0.6))
         )
         .contextMenu {
-            Button("Open in Finder") {
-                NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: workspace.path)
+            // Server actions
+            if workspace.status == .running {
+                Button("Stop Server") {
+                    appState.stopWorkspace(workspace, in: project)
+                }
+            } else if workspace.status == .stopped || workspace.status == .error {
+                Button("Start Server") {
+                    appState.startWorkspace(workspace, in: project)
+                }
+            }
+
+            if let managedId = appState.managedServerId(for: workspace) {
+                Button("View Logs") {
+                    onShowLogs(LogTarget(id: managedId, title: "\(project.name)/\(workspace.name)"))
+                }
+            }
+
+            Divider()
+
+            // Open actions
+            if workspace.status == .running, let port = workspace.runningPorts.first?.port ?? workspace.effectivePort {
+                Button("Open in Browser") {
+                    appState.openInBrowser(port: port)
+                }
+            }
+            Button("Open in Editor") {
+                appState.openInEditor(path: workspace.path)
             }
             Button("Open in Terminal") {
                 appState.openInTerminal(path: workspace.path)
+            }
+            Button("Open in Finder") {
+                NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: workspace.path)
             }
         }
     }
@@ -213,16 +313,31 @@ struct WorkspaceCard: View {
     var statusColor: Color {
         switch workspace.status {
         case .running: return .green
-        case .starting, .stopping: return .orange
+        case .starting, .stopping, .restarting: return .orange
         case .error: return .red
         case .stopped: return Color.secondary.opacity(0.4)
         }
     }
 }
 
+struct StatusDot: View {
+    static let containerSize: CGFloat = 24
+    let color: Color
+    let size: CGFloat
+
+    var body: some View {
+        Circle()
+            .fill(color)
+            .frame(width: size, height: size)
+            .frame(width: Self.containerSize, height: Self.containerSize)
+    }
+}
+
 struct WorkspaceActionButtons: View {
     let workspace: Workspace
     let project: Project
+    let showLogs: Bool
+    let onShowLogs: () -> Void
     @EnvironmentObject var appState: AppState
 
     var body: some View {
@@ -232,6 +347,12 @@ struct WorkspaceActionButtons: View {
                     .scaleEffect(0.4)
                     .frame(width: 18, height: 18)
             } else if workspace.status == .running {
+                if showLogs {
+                    SmallIconButton(icon: "terminal", help: "View logs") {
+                        onShowLogs()
+                    }
+                }
+
                 // Open in browser
                 if let port = workspace.runningPorts.first?.port ?? workspace.effectivePort {
                     SmallIconButton(icon: "globe", help: "Open localhost:\(port)") {
@@ -249,6 +370,12 @@ struct WorkspaceActionButtons: View {
                     appState.stopWorkspace(workspace, in: project)
                 }
             } else {
+                if showLogs {
+                    SmallIconButton(icon: "terminal", help: "View logs") {
+                        onShowLogs()
+                    }
+                }
+
                 // Open in editor
                 SmallIconButton(icon: "rectangle.and.pencil.and.ellipsis", help: "Open in editor") {
                     appState.openInEditor(path: workspace.path)
@@ -298,7 +425,7 @@ struct PortBadge: View {
 
     var body: some View {
         Button(action: action) {
-            Text("\(port)")
+            Text(verbatim: "\(port)")
                 .font(.system(size: 10, weight: .medium, design: .monospaced))
                 .foregroundColor(badgeColor)
                 .padding(.horizontal, 6)
@@ -347,19 +474,27 @@ struct ConflictBadge: View {
 
 struct ActionButtons: View {
     let project: Project
+    let showLogs: Bool
+    let onShowLogs: () -> Void
     @EnvironmentObject var appState: AppState
 
     var body: some View {
         HStack(spacing: 2) {
-            if project.status == .starting {
+            if project.status == .starting || project.status == .restarting {
                 ProgressView()
                     .scaleEffect(0.5)
-                    .frame(width: 20, height: 20)
+                    .frame(width: 26, height: 26)
             } else if project.status == .stopping {
                 ProgressView()
                     .scaleEffect(0.5)
-                    .frame(width: 20, height: 20)
+                    .frame(width: 26, height: 26)
             } else if project.status == .running {
+                if showLogs {
+                    IconButton(icon: "terminal", help: "View logs") {
+                        onShowLogs()
+                    }
+                }
+
                 // Open in browser (custom port takes precedence)
                 if let port = project.browserPort {
                     IconButton(icon: "globe", help: "Open localhost:\(port)") {
@@ -382,6 +517,12 @@ struct ActionButtons: View {
                     appState.stopProject(project)
                 }
             } else {
+                if showLogs {
+                    IconButton(icon: "terminal", help: "View logs") {
+                        onShowLogs()
+                    }
+                }
+
                 // Open in editor
                 IconButton(icon: "rectangle.and.pencil.and.ellipsis", help: "Open in editor") {
                     appState.openInEditor(path: project.path)
@@ -430,40 +571,72 @@ struct PortConfigSheet: View {
     @EnvironmentObject var appState: AppState
     @FocusState private var isFocused: Bool
 
+    private var isValid: Bool {
+        guard let port = Int(portInput) else { return false }
+        return port >= 1 && port <= 65535
+    }
+
     var body: some View {
-        VStack(spacing: 16) {
-            Text("Set Port for \(project.name)")
-                .font(.headline)
-
-            VStack(alignment: .leading, spacing: 4) {
-                TextField("Port number", text: $portInput)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 120)
-                    .focused($isFocused)
-                    .onSubmit { save() }
-
+        VStack(alignment: .leading, spacing: 12) {
+            // Header
+            HStack {
+                Text(project.name)
+                    .font(.system(size: 13, weight: .semibold))
+                Spacer()
                 if let expected = project.expectedPorts.first {
-                    Text("Detected port: \(expected)")
-                        .font(.caption)
+                    Text("detected: \(expected)")
+                        .font(.system(size: 11))
                         .foregroundColor(.secondary)
                 }
             }
 
-            HStack(spacing: 12) {
-                Button("Cancel") {
+            // Input row
+            HStack(spacing: 8) {
+                TextField("Port", text: $portInput)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 24, weight: .medium, design: .monospaced))
+                    .focused($isFocused)
+                    .onSubmit { if isValid { save() } }
+                    .frame(maxWidth: .infinity)
+
+                Button {
                     isPresented = false
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.secondary)
+                        .frame(width: 24, height: 24)
+                        .background(Color.secondary.opacity(0.1))
+                        .cornerRadius(6)
                 }
+                .buttonStyle(.plain)
                 .keyboardShortcut(.cancelAction)
 
-                Button("Save") {
+                Button {
                     save()
+                } label: {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(.white)
+                        .frame(width: 24, height: 24)
+                        .background(isValid ? Color.accentColor : Color.secondary.opacity(0.3))
+                        .cornerRadius(6)
                 }
+                .buttonStyle(.plain)
                 .keyboardShortcut(.defaultAction)
-                .disabled(portInput.isEmpty || Int(portInput) == nil)
+                .disabled(!isValid)
+            }
+
+            // Validation hint
+            if !portInput.isEmpty && !isValid {
+                Text("Enter a port between 1–65535")
+                    .font(.system(size: 10))
+                    .foregroundColor(.orange)
             }
         }
-        .padding(20)
+        .padding(16)
         .frame(width: 280)
+        .background(Color(NSColor.controlBackgroundColor))
         .onAppear {
             isFocused = true
         }
@@ -474,5 +647,174 @@ struct PortConfigSheet: View {
             appState.setCustomPort(for: project, port: port)
         }
         isPresented = false
+    }
+}
+
+struct ServerLogView: View {
+    @EnvironmentObject var appState: AppState
+    let serverId: UUID
+    let title: String?
+    let onClose: () -> Void
+    @State private var logLines: [String] = []
+    @State private var autoFollow = true
+    @State private var isStopping = false
+    @State private var logTask: Task<Void, Never>?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Compact header
+            VStack(spacing: 6) {
+                HStack(spacing: 6) {
+                    Text(serverTitle)
+                        .font(.system(size: 14, weight: .semibold))
+                        .lineLimit(1)
+
+                    Spacer()
+
+                    // Port badge (clickable to open in browser)
+                    if let info = serverInfo, let port = info.port {
+                        PortBadge(port: port, isActive: info.isRunning) {
+                            appState.openInBrowser(port: port)
+                        }
+                    }
+
+                    // Auto-follow toggle (highlighted when active)
+                    Button {
+                        autoFollow.toggle()
+                    } label: {
+                        Image(systemName: "arrow.down.to.line")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(autoFollow ? .accentColor : .secondary)
+                            .frame(width: 26, height: 26)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(autoFollow ? Color.accentColor.opacity(0.12) : Color.clear)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .help(autoFollow ? "Auto-follow on" : "Auto-follow off")
+
+                    // Stop button (only when running)
+                    if let info = serverInfo, info.isRunning {
+                        if isStopping {
+                            ProgressView()
+                                .scaleEffect(0.5)
+                                .frame(width: 26, height: 26)
+                        } else {
+                            IconButton(icon: "stop.fill", help: "Stop server", color: .red) {
+                                isStopping = true
+                                appState.stopManagedServer(id: serverId)
+                            }
+                        }
+                    }
+
+                    // Close
+                    IconButton(icon: "xmark", help: "Close") {
+                        onClose()
+                    }
+                }
+
+                // Status line with colored dot
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(statusColor)
+                        .frame(width: 6, height: 6)
+                    Text(statusText)
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                    Spacer()
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 14)
+            .padding(.bottom, 10)
+
+            // Log output
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 4) {
+                        if logLines.isEmpty {
+                            Text("No output yet")
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundColor(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        } else {
+                            ForEach(logLines.indices, id: \.self) { idx in
+                                Text(LogFormatter.format(logLines[idx]))
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .id(idx)
+                            }
+                        }
+                    }
+                    .padding(12)
+                }
+                .background(Color(NSColor.controlBackgroundColor))
+                .cornerRadius(8)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 12)
+                .onChange(of: logLines.count) { _ in
+                    guard autoFollow, let last = logLines.indices.last else { return }
+                    proxy.scrollTo(last, anchor: .bottom)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear {
+            startLogTask()
+        }
+        .onDisappear {
+            logTask?.cancel()
+            logTask = nil
+        }
+        .onChange(of: serverInfo?.isRunning ?? false) { running in
+            if running {
+                isStopping = false
+            } else if isStopping {
+                isStopping = false
+            }
+        }
+    }
+
+    private var serverInfo: ManagedServerInfo? {
+        appState.managedServerInfo(id: serverId)
+    }
+
+    private var serverTitle: String {
+        title ?? serverInfo?.label ?? "Server Logs"
+    }
+
+    private var statusColor: Color {
+        guard let info = serverInfo else { return Color.secondary.opacity(0.4) }
+        if isStopping { return .orange }
+        if info.isRunning { return .green }
+        if let exitCode = info.exitCode, exitCode != 0, info.stopRequestedAt == nil {
+            return .red
+        }
+        return Color.secondary.opacity(0.4)
+    }
+
+    private var statusText: String {
+        guard let info = serverInfo else { return "Unknown" }
+        if isStopping { return "Stopping..." }
+        if info.isRunning { return "Running" }
+        if info.stopRequestedAt != nil { return "Stopped" }
+        if let exitCode = info.exitCode {
+            return exitCode == 0 ? "Stopped" : "Exited with code \(exitCode)"
+        }
+        return "Stopped"
+    }
+
+    private func startLogTask() {
+        logTask?.cancel()
+        logTask = Task {
+            while !Task.isCancelled {
+                let snapshot = await appState.logSnapshot(id: serverId, tail: 500)
+                await MainActor.run {
+                    self.logLines = snapshot
+                }
+                try? await Task.sleep(nanoseconds: 500_000_000)
+            }
+        }
     }
 }
