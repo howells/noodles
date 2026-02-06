@@ -1,21 +1,30 @@
 import SwiftUI
 
+// LEARN: Tuples can't be used with @State because they don't conform to Equatable in the way
+// SwiftUI needs. A lightweight struct solves this while keeping things simple.
+struct AppOption: Identifiable {
+    let id: String
+    let name: String
+    let installed: Bool
+}
+
 struct SettingsView: View {
     @EnvironmentObject var appState: AppState
     @Binding var isPresented: Bool
+    // LEARN: These @State vars are local COPIES of the config values.
+    // On `.onAppear`, they're populated from appState.config.
+    // On save, they're written back. This is a common pattern for "draft" state —
+    // the user can edit freely and only commit on save (or discard by closing).
+    // In React, you'd do: `const [sitesPath, setSitesPath] = useState(config.sitesPath)`
     @State private var sitesPath: String = ""
     @State private var selectedEditor: String = ""
     @State private var selectedTerminal: String = ""
+    @State private var runManagedServers: Bool = false
 
-    private let editors = [
-        ("cursor", "Cursor"),
-        ("code", "VS Code"),
-        ("zed", "Zed")
-    ]
-
-    private var terminals: [(id: String, name: String)] {
-        ProcessManager.detectInstalledTerminals()
-    }
+    // LEARN: Computed once in onAppear instead of every render — avoids repeated
+    // filesystem I/O (FileManager.fileExists) on the main thread during re-renders.
+    @State private var editorOptions: [AppOption] = []
+    @State private var terminalOptions: [AppOption] = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -77,17 +86,24 @@ struct SettingsView: View {
                     // Editor
                     SettingsCard {
                         VStack(alignment: .leading, spacing: 8) {
+                            // LEARN: `Label("text", systemImage: "icon.name")` = icon + text combo.
+                            // Like `<span><Icon /> Default Editor</span>` in React.
                             Label("Default Editor", systemImage: "rectangle.and.pencil.and.ellipsis")
                                 .font(.system(size: 12, weight: .medium))
                                 .foregroundColor(.secondary)
 
-                            HStack(spacing: 6) {
-                                ForEach(editors, id: \.0) { editor in
+                            LazyVGrid(columns: [
+                                GridItem(.flexible()),
+                                GridItem(.flexible()),
+                                GridItem(.flexible())
+                            ], spacing: 6) {
+                                ForEach(editorOptions) { editor in
                                     OptionButton(
-                                        name: editor.1,
-                                        isSelected: selectedEditor == editor.0
+                                        name: editor.name,
+                                        isSelected: selectedEditor == editor.id,
+                                        isAvailable: editor.installed
                                     ) {
-                                        selectedEditor = editor.0
+                                        selectedEditor = editor.id
                                     }
                                 }
                             }
@@ -101,16 +117,16 @@ struct SettingsView: View {
                                 .font(.system(size: 12, weight: .medium))
                                 .foregroundColor(.secondary)
 
-                            let terminalList = terminals
                             LazyVGrid(columns: [
                                 GridItem(.flexible()),
                                 GridItem(.flexible()),
                                 GridItem(.flexible())
                             ], spacing: 6) {
-                                ForEach(terminalList, id: \.id) { terminal in
+                                ForEach(terminalOptions) { terminal in
                                     OptionButton(
                                         name: terminal.name,
-                                        isSelected: selectedTerminal == terminal.id
+                                        isSelected: selectedTerminal == terminal.id,
+                                        isAvailable: terminal.installed
                                     ) {
                                         selectedTerminal = terminal.id
                                     }
@@ -121,14 +137,23 @@ struct SettingsView: View {
 
                     // Preferences
                     SettingsCard {
-                        VStack(alignment: .leading, spacing: 12) {
+                        VStack(spacing: 0) {
                             Label("Preferences", systemImage: "slider.horizontal.3")
                                 .font(.system(size: 12, weight: .medium))
                                 .foregroundColor(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.bottom, 10)
 
                             SettingsToggle(
-                                title: "Launch on Login",
-                                subtitle: "Start Noodles when you log in",
+                                title: "Managed dev servers",
+                                icon: "waveform.path.ecg",
+                                isOn: $runManagedServers
+                            )
+
+                            Divider().padding(.vertical, 6)
+
+                            SettingsToggle(
+                                title: "Launch on login",
                                 icon: "power",
                                 isOn: Binding(
                                     get: { appState.config.launchOnLogin },
@@ -136,16 +161,15 @@ struct SettingsView: View {
                                 )
                             )
 
-                            Divider()
-                                .padding(.vertical, 2)
+                            Divider().padding(.vertical, 6)
 
                             SettingsToggle(
-                                title: "Show Hidden Projects",
-                                subtitle: appState.hiddenProjectCount > 0
-                                    ? "\(appState.hiddenProjectCount) project\(appState.hiddenProjectCount == 1 ? "" : "s") hidden"
-                                    : "No hidden projects",
+                                title: "Show hidden projects",
                                 icon: "eye.slash",
-                                isOn: $appState.showHidden
+                                isOn: $appState.showHidden,
+                                badge: appState.hiddenProjectCount > 0
+                                    ? "\(appState.hiddenProjectCount)"
+                                    : nil
                             )
                         }
                     }
@@ -174,12 +198,33 @@ struct SettingsView: View {
             .padding(.vertical, 12)
             .background(Color(NSColor.windowBackgroundColor))
         }
-        .frame(width: 340, height: 460)
+        .frame(width: 340, height: 500)
         .background(Color(NSColor.windowBackgroundColor))
         .onAppear {
             sitesPath = appState.config.sitesPath
             selectedEditor = appState.config.editor
             selectedTerminal = appState.config.terminal
+            runManagedServers = appState.config.runManagedServers
+
+            // Detect installed apps once (avoids filesystem I/O on every render)
+            editorOptions = ProcessManager.detectInstalledEditors().map {
+                AppOption(id: $0.id, name: $0.name, installed: $0.installed)
+            }
+            terminalOptions = ProcessManager.detectInstalledTerminals().map {
+                AppOption(id: $0.id, name: $0.name, installed: $0.installed)
+            }
+
+            // If saved editor isn't installed, fall back to first installed one
+            if !(editorOptions.first { $0.id == selectedEditor }?.installed ?? false),
+               let fallback = editorOptions.first(where: { $0.installed }) {
+                selectedEditor = fallback.id
+            }
+
+            // Same for terminal
+            if !(terminalOptions.first { $0.id == selectedTerminal }?.installed ?? false),
+               let fallback = terminalOptions.first(where: { $0.installed }) {
+                selectedTerminal = fallback.id
+            }
         }
     }
 
@@ -211,6 +256,10 @@ struct SettingsView: View {
             appState.config.terminal = selectedTerminal
         }
 
+        if appState.config.runManagedServers != runManagedServers {
+            appState.config.runManagedServers = runManagedServers
+        }
+
         ConfigManager.save(appState.config)
 
         if needsRescan {
@@ -221,7 +270,16 @@ struct SettingsView: View {
     }
 }
 
+// LEARN: GENERICS in Swift — `<Content: View>` means "Content is any type that conforms to View."
+// Like `interface SettingsCardProps<Content extends View>` in TS.
+//
+// This lets SettingsCard wrap ANY view content — it's a reusable container component.
+// In React: `const SettingsCard: FC<{ children: ReactNode }> = ({ children }) => ...`
 struct SettingsCard<Content: View>: View {
+    // LEARN: `@ViewBuilder` is a property wrapper that enables SwiftUI's declarative syntax.
+    // It lets you pass multiple views as a single closure (like `children` in React).
+    // Without @ViewBuilder, you could only return ONE view from the closure.
+    // With it, you can write `if/else`, multiple views, etc. — the compiler combines them.
     @ViewBuilder let content: Content
 
     var body: some View {
@@ -238,6 +296,7 @@ struct SettingsCard<Content: View>: View {
 struct OptionButton: View {
     let name: String
     let isSelected: Bool
+    var isAvailable: Bool = true
     let action: () -> Void
 
     var body: some View {
@@ -253,35 +312,43 @@ struct OptionButton: View {
                 )
         }
         .buttonStyle(.plain)
+        .opacity(isAvailable ? 1.0 : 0.35)
+        .disabled(!isAvailable)
+        .help(isAvailable ? name : "\(name) — Not installed")
     }
 }
 
 struct SettingsToggle: View {
     let title: String
-    let subtitle: String
     let icon: String
     @Binding var isOn: Bool
+    var badge: String? = nil
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             Image(systemName: icon)
-                .font(.system(size: 12))
+                .font(.system(size: 11))
                 .foregroundColor(.secondary)
-                .frame(width: 20)
+                .frame(width: 16)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.system(size: 13))
-                Text(subtitle)
-                    .font(.system(size: 11))
+            Text(title)
+                .font(.system(size: 12))
+
+            if let badge = badge {
+                Text(badge)
+                    .font(.system(size: 10))
                     .foregroundColor(.secondary)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(Color.secondary.opacity(0.15))
+                    .cornerRadius(4)
             }
 
             Spacer()
 
             Toggle("", isOn: $isOn)
                 .toggleStyle(.switch)
-                .scaleEffect(0.8)
+                .scaleEffect(0.7)
         }
     }
 }
