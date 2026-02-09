@@ -298,35 +298,14 @@ function VideoCard({ expanded }: { expanded: boolean }) {
   );
 }
 
-function IconCard({ showPopover }: { showPopover: boolean }) {
+function IconCard() {
   return (
-    <div className="relative">
-      <div
-        className="rounded-[22px] overflow-hidden"
-        style={{ boxShadow: shadowLg, width: 96, height: 96 }}
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/app-icon.png" alt="Noodles" className="w-full h-full" draggable={false} />
-      </div>
-      <AnimatePresence>
-        {showPopover && (
-          <motion.div
-            className="absolute -top-12 left-1/2 -translate-x-1/2 whitespace-nowrap px-4 py-2 rounded-xl"
-            style={{
-              backgroundColor: "var(--color-card)",
-              boxShadow: shadowLg,
-              fontFamily: "var(--font-body), system-ui, sans-serif",
-              color: "var(--color-card-text)",
-            }}
-            initial={{ opacity: 0, y: 8, scale: 0.8, rotate: -3 }}
-            animate={{ opacity: 1, y: 0, scale: 1, rotate: 2 }}
-            exit={{ opacity: 0, y: 8, scale: 0.8 }}
-            transition={{ type: "spring", stiffness: 500, damping: 25 }}
-          >
-            <span className="text-sm font-medium">Coming soon!</span>
-          </motion.div>
-        )}
-      </AnimatePresence>
+    <div
+      className="rounded-[22px] overflow-hidden"
+      style={{ boxShadow: shadowLg, width: 96, height: 96 }}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/app-icon.png" alt="Noodles" className="w-full h-full" draggable={false} />
     </div>
   );
 }
@@ -345,36 +324,22 @@ export function Cards({
   isDraggingRef: React.RefObject<boolean>;
 }) {
   const isMobile = useMediaQuery("(max-width: 768px)");
-  const [comingSoonOpen, setComingSoonOpen] = useState(false);
-
   const handleIconClick = useCallback(() => {
-    setComingSoonOpen((prev) => !prev);
+    window.open(
+      "https://github.com/howells/noodles-app/releases/latest/download/Noodles.dmg",
+      "_blank",
+    );
   }, []);
 
-  // Close popover when video opens
+  // Escape key to close video
   useEffect(() => {
-    if (videoOpen) setComingSoonOpen(false);
-  }, [videoOpen]);
-
-  // Auto-dismiss popover
-  useEffect(() => {
-    if (!comingSoonOpen) return;
-    const timer = setTimeout(() => setComingSoonOpen(false), 2500);
-    return () => clearTimeout(timer);
-  }, [comingSoonOpen]);
-
-  // Escape key to close
-  useEffect(() => {
-    if (!videoOpen && !comingSoonOpen) return;
+    if (!videoOpen) return;
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        if (videoOpen) onVideoClose();
-        if (comingSoonOpen) setComingSoonOpen(false);
-      }
+      if (e.key === "Escape") onVideoClose();
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [videoOpen, comingSoonOpen, onVideoClose]);
+  }, [videoOpen, onVideoClose]);
 
   // Mobile order: title, description, video, icon
   const mobileOrder = ["title", "description", "video", "icon"] as const;
@@ -398,7 +363,7 @@ export function Cards({
                 {def.id === "title" && <TitleCard />}
                 {def.id === "description" && <DescriptionCard />}
                 {def.id === "video" && <VideoCard expanded={false} />}
-                {def.id === "icon" && <IconCard showPopover={comingSoonOpen} />}
+                {def.id === "icon" && <IconCard />}
               </DraggableCard>
             );
           })}
@@ -474,7 +439,7 @@ export function Cards({
             {def.id === "title" && <TitleCard />}
             {def.id === "description" && <DescriptionCard />}
             {def.id === "video" && <VideoCard expanded={videoOpen} />}
-            {def.id === "icon" && <IconCard showPopover={comingSoonOpen} />}
+            {def.id === "icon" && <IconCard />}
           </DraggableCard>
         ))}
       </div>
