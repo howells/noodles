@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, motion, useMotionValue, useSpring } from "motion/react";
+import { AnimatePresence, motion, useMotionValue, useMotionValueEvent, useSpring } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMediaQuery } from "usehooks-ts";
 import {
@@ -81,11 +81,14 @@ function DraggableCard({
   const dragY = useMotionValue(0);
   const dragScale = useMotionValue(1);
 
-  const springDragX = useSpring(dragX, dragSpring);
-  const springDragY = useSpring(dragY, dragSpring);
+  // Persistent offset — accumulates across drags
+  const offsetRef = useRef({ x: 0, y: 0 });
+  const springX = useSpring(dragX, dragSpring);
+  const springY = useSpring(dragY, dragSpring);
   const springDragScale = useSpring(dragScale, { stiffness: 600, damping: 30 });
 
   const isVideo = def.id === "video";
+  const didDragRef = useRef(false);
 
   // Track video close to stagger the return via spring physics
   const wasVideoOpen = useRef(false);
@@ -93,6 +96,15 @@ function DraggableCard({
   useEffect(() => {
     wasVideoOpen.current = videoOpen;
   }, [videoOpen]);
+
+  // Reset drag offset when video opens so card returns to layout position
+  useEffect(() => {
+    if (videoOpen) {
+      dragX.jump(0);
+      dragY.jump(0);
+      offsetRef.current = { x: 0, y: 0 };
+    }
+  }, [videoOpen, dragX, dragY]);
 
   const getAnimateTarget = () => {
     if (!visible) {
@@ -161,25 +173,37 @@ function DraggableCard({
         <motion.div
           className={`pointer-events-auto select-none ${videoOpen && isVideo ? "" : "cursor-grab active:cursor-grabbing"}`}
           style={{
-            x: videoOpen ? 0 : springDragX,
-            y: videoOpen ? 0 : springDragY,
+            x: videoOpen ? 0 : springX,
+            y: videoOpen ? 0 : springY,
             scale: springDragScale,
           }}
           drag={!videoOpen}
-          dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }}
-          dragElastic={0.15}
+          dragMomentum={false}
           onDragStart={() => {
+            didDragRef.current = true;
             dragScale.set(1.04);
             (isDraggingRef as React.MutableRefObject<boolean>).current = true;
           }}
-          onDragEnd={() => {
-            dragX.set(0);
-            dragY.set(0);
+          onDrag={(_, info) => {
+            dragX.jump(offsetRef.current.x + info.offset.x);
+            dragY.jump(offsetRef.current.y + info.offset.y);
+          }}
+          onDragEnd={(_, info) => {
+            offsetRef.current.x += info.offset.x;
+            offsetRef.current.y += info.offset.y;
+            dragX.set(offsetRef.current.x);
+            dragY.set(offsetRef.current.y);
             dragScale.set(1);
             (isDraggingRef as React.MutableRefObject<boolean>).current = false;
           }}
           whileTap={videoOpen ? undefined : { scale: 0.97 }}
-          onClick={onClick}
+          onClick={() => {
+            if (didDragRef.current) {
+              didDragRef.current = false;
+              return;
+            }
+            onClick?.();
+          }}
         >
           {children}
         </motion.div>
@@ -261,7 +285,7 @@ function VideoCard({ expanded }: { expanded: boolean }) {
       >
         <VideoPlayerContent
           slot="media"
-          src="https://noodles.stow.sh/3agud7tcuo0ld.mp4"
+          src="/noodles-demo.mp4"
           playsInline
           preload="auto"
           autoPlay

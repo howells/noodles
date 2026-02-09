@@ -28,8 +28,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${spaceGrotesk.variable} ${dmSans.variable}`}>
-      <body className="antialiased">{children}</body>
+    <html lang="en" className={`${spaceGrotesk.variable} ${dmSans.variable} min-h-svh touch-manipulation`}>
+      <body className="antialiased isolate break-words">{children}</body>
     </html>
   );
 }
