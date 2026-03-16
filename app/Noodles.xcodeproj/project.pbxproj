@@ -11,16 +11,17 @@
 		A1000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000002; };
 		A1000003 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000003; };
 		A1000004 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000004; };
-		A1000005 /* ProcessManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000005; };
-		A1000006 /* ProjectScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000006; };
-		A1000007 /* ProjectCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000007; };
-		A1000008 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000009; };
+		A1000005 /* PortMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000005; };
+		A1000006 /* ProcessKiller.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000006; };
+		A1000007 /* ServerCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000007; };
+		A1000008 /* LogPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000009; };
+		A100000A /* TerminalResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000B; };
 		A1000009 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A2000011; };
 		B1000001 /* NoodlesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000001; };
-		B1000002 /* ProcessManagerParsingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000003; };
+		B1000002 /* PortMonitorParsingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000003; };
 		B1000003 /* AppStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000004; };
-		B1000004 /* LayoutConstantsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000005; };
-		B1000005 /* ProcessManagerStopTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000006; };
+		B1000004 /* LogReaderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000005; };
+		B1000005 /* TerminalResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000006; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -38,20 +39,21 @@
 		A2000002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		A2000003 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
 		A2000004 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
-		A2000005 /* ProcessManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessManager.swift; sourceTree = "<group>"; };
-		A2000006 /* ProjectScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectScanner.swift; sourceTree = "<group>"; };
-		A2000007 /* ProjectCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectCard.swift; sourceTree = "<group>"; };
+		A2000005 /* PortMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortMonitor.swift; sourceTree = "<group>"; };
+		A2000006 /* ProcessKiller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessKiller.swift; sourceTree = "<group>"; };
+		A2000007 /* ServerCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerCard.swift; sourceTree = "<group>"; };
 		A2000008 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		A2000009 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		A2000009 /* LogPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogPanel.swift; sourceTree = "<group>"; };
 		A2000010 /* Noodles.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Noodles.entitlements; sourceTree = "<group>"; };
 		A2000011 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A200000B /* TerminalResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalResolver.swift; sourceTree = "<group>"; };
 		A3000001 /* Noodles.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Noodles.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B2000001 /* NoodlesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoodlesTests.swift; sourceTree = "<group>"; };
 		B2000002 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		B2000003 /* ProcessManagerParsingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessManagerParsingTests.swift; sourceTree = "<group>"; };
+		B2000003 /* PortMonitorParsingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortMonitorParsingTests.swift; sourceTree = "<group>"; };
 		B2000004 /* AppStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStateTests.swift; sourceTree = "<group>"; };
-		B2000005 /* LayoutConstantsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutConstantsTests.swift; sourceTree = "<group>"; };
-		B2000006 /* ProcessManagerStopTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessManagerStopTests.swift; sourceTree = "<group>"; };
+		B2000005 /* LogReaderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogReaderTests.swift; sourceTree = "<group>"; };
+		B2000006 /* TerminalResolverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalResolverTests.swift; sourceTree = "<group>"; };
 		B3000001 /* NoodlesTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NoodlesTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -87,13 +89,14 @@
 			children = (
 				A2000011 /* Assets.xcassets */,
 				A2000001 /* NoodlesApp.swift */,
-				A2000002 /* ContentView.swift */,
 				A2000003 /* AppState.swift */,
 				A2000004 /* Models.swift */,
-				A2000005 /* ProcessManager.swift */,
-				A2000006 /* ProjectScanner.swift */,
-				A2000007 /* ProjectCard.swift */,
-				A2000009 /* SettingsView.swift */,
+				A2000005 /* PortMonitor.swift */,
+				A200000B /* TerminalResolver.swift */,
+				A2000006 /* ProcessKiller.swift */,
+				A2000002 /* ContentView.swift */,
+				A2000007 /* ServerCard.swift */,
+				A2000009 /* LogPanel.swift */,
 				A2000008 /* Info.plist */,
 				A2000010 /* Noodles.entitlements */,
 			);
@@ -104,10 +107,10 @@
 			isa = PBXGroup;
 			children = (
 				B2000001 /* NoodlesTests.swift */,
-				B2000003 /* ProcessManagerParsingTests.swift */,
+				B2000003 /* PortMonitorParsingTests.swift */,
 				B2000004 /* AppStateTests.swift */,
-				B2000005 /* LayoutConstantsTests.swift */,
-				B2000006 /* ProcessManagerStopTests.swift */,
+				B2000005 /* LogReaderTests.swift */,
+				B2000006 /* TerminalResolverTests.swift */,
 				B2000002 /* Info.plist */,
 			);
 			path = NoodlesTests;
@@ -198,10 +201,11 @@
 				A1000002 /* ContentView.swift in Sources */,
 				A1000003 /* AppState.swift in Sources */,
 				A1000004 /* Models.swift in Sources */,
-				A1000005 /* ProcessManager.swift in Sources */,
-				A1000006 /* ProjectScanner.swift in Sources */,
-				A1000007 /* ProjectCard.swift in Sources */,
-				A1000008 /* SettingsView.swift in Sources */,
+				A1000005 /* PortMonitor.swift in Sources */,
+				A100000A /* TerminalResolver.swift in Sources */,
+				A1000006 /* ProcessKiller.swift in Sources */,
+				A1000007 /* ServerCard.swift in Sources */,
+				A1000008 /* LogPanel.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -210,10 +214,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				B1000001 /* NoodlesTests.swift in Sources */,
-				B1000002 /* ProcessManagerParsingTests.swift in Sources */,
+				B1000002 /* PortMonitorParsingTests.swift in Sources */,
 				B1000003 /* AppStateTests.swift in Sources */,
-				B1000004 /* LayoutConstantsTests.swift in Sources */,
-				B1000005 /* ProcessManagerStopTests.swift in Sources */,
+				B1000004 /* LogReaderTests.swift in Sources */,
+				B1000005 /* TerminalResolverTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
