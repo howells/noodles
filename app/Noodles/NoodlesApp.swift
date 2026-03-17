@@ -20,7 +20,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         appState = AppState()
 
         popover = NSPopover()
-        popover.contentSize = NSSize(width: 396, height: 516)
+        popover.contentSize = NSSize(width: 380, height: 200)
         popover.behavior = .applicationDefined
         popover.delegate = self
         popover.contentViewController = NSHostingController(
@@ -64,8 +64,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     @objc private func handlePopoverResize(_ notification: Notification) {
-        guard let width = notification.userInfo?["width"] as? CGFloat else { return }
-        popover.contentSize = NSSize(width: width, height: 516)
+        guard let width = notification.userInfo?["width"] as? CGFloat,
+              let height = notification.userInfo?["height"] as? CGFloat else { return }
+        popover.contentSize = NSSize(width: width, height: height)
     }
 
     @objc func updateStatusButton() {
@@ -119,6 +120,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
                 popover.contentViewController?.view.window?.makeKey()
             }
+        }
+    }
+
+    @objc func toggleLoginItem() {
+        Task { @MainActor in
+            appState.toggleLaunchOnLogin()
         }
     }
 

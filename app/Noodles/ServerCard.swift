@@ -9,11 +9,10 @@ struct ServerCard: View {
     }
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             Circle()
                 .fill(isKilling ? Color.orange : Color.green)
                 .frame(width: 8, height: 8)
-                .frame(width: 24, height: 24)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(server.name)
@@ -69,12 +68,12 @@ struct ServerCard: View {
                 }
             }
         }
-        .padding(.leading, 2)
+        .padding(.leading, 10)
         .padding(.trailing, 10)
         .padding(.vertical, 10)
         .contentShape(Rectangle())
         .background(
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: 8)
                 .fill(Color(NSColor.controlBackgroundColor))
         )
     }
