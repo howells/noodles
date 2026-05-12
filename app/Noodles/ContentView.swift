@@ -24,8 +24,8 @@ struct ContentView: View {
     }
 
     private var panelHeight: CGFloat {
-        if appState.servers.isEmpty { return 120 }
-        let count = CGFloat(appState.servers.count)
+        if appState.projects.isEmpty { return 120 }
+        let count = CGFloat(appState.projects.count)
         let listHeight = listPadding + count * cardHeight + (count - 1) * cardSpacing
         let maxListHeight = maxPanelHeight - footerHeight
         return min(listHeight, maxListHeight) + footerHeight
@@ -52,7 +52,7 @@ struct ContentView: View {
         .frame(width: contentWidth, height: panelHeight)
         .onAppear { postPopoverSize() }
         .onChange(of: appState.activeLogPath != nil) { _ in postPopoverSize() }
-        .onChange(of: appState.servers.count) { _ in postPopoverSize() }
+        .onChange(of: appState.projects.count) { _ in postPopoverSize() }
         .onChange(of: cardHeight) { _ in postPopoverSize() }
         .onPreferenceChange(CardHeightKey.self) { height in
             if height > 0 { cardHeight = height }
@@ -61,17 +61,17 @@ struct ContentView: View {
 
     private var mainPanel: some View {
         VStack(spacing: 0) {
-            if appState.servers.isEmpty {
+            if appState.projects.isEmpty {
                 Spacer()
-                Text("No servers running")
+                Text("No servers seen yet")
                     .font(.system(size: 13))
                     .foregroundColor(.secondary)
                 Spacer()
             } else {
                 ScrollView {
                     VStack(spacing: cardSpacing) {
-                        ForEach(appState.servers) { server in
-                            ServerCard(server: server)
+                        ForEach(appState.projects) { project in
+                            ServerCard(server: project)
                                 .background(
                                     GeometryReader { geo in
                                         Color.clear.preference(key: CardHeightKey.self, value: geo.size.height)

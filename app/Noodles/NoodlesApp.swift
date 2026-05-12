@@ -72,7 +72,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     @objc func updateStatusButton() {
         Task { @MainActor in
             guard let button = statusItem.button else { return }
-            let runningCount = min(appState.servers.count, 4)
+            let runningCount = min(appState.projects.filter(\.isRunning).count, 4)
             button.image = createGridIcon(runningCount: runningCount)
             button.title = ""
         }

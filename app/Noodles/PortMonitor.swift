@@ -6,6 +6,17 @@ private actor DataAccumulator {
     func getData() -> Data { data }
 }
 
+struct RunningServer {
+    let id: String
+    let ports: [Int]
+    let pids: [Int]
+    let name: String
+    let path: String
+    let displayPath: String
+    var hasLogs: Bool
+    var terminalApp: String?
+}
+
 struct PortMonitor {
     static let allowedProcesses: Set<String> = ["node", "bun", "deno", "next-server", "vite"]
     static let logDir = FileManager.default.homeDirectoryForCurrentUser

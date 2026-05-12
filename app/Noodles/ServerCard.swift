@@ -1,17 +1,22 @@
 import SwiftUI
 
 struct ServerCard: View {
-    let server: RunningServer
+    let server: ServerItem
     @EnvironmentObject var appState: AppState
 
     private var isKilling: Bool {
         appState.isKilling.contains(server.id)
     }
 
+    private var dotColor: Color {
+        if isKilling { return .orange }
+        return server.isRunning ? .green : Color.secondary.opacity(0.4)
+    }
+
     var body: some View {
         HStack(spacing: 8) {
             Circle()
-                .fill(isKilling ? Color.orange : Color.green)
+                .fill(dotColor)
                 .frame(width: 8, height: 8)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -27,43 +32,52 @@ struct ServerCard: View {
 
             Spacer()
 
-            HStack(spacing: 4) {
-                ForEach(server.ports.prefix(3), id: \.self) { port in
-                    PortBadge(port: port) {
-                        appState.openInBrowser(port: port)
+            if server.isRunning {
+                HStack(spacing: 4) {
+                    ForEach(server.ports.prefix(3), id: \.self) { port in
+                        PortBadge(port: port) {
+                            appState.openInBrowser(port: port)
+                        }
                     }
                 }
-            }
 
-            HStack(spacing: 2) {
-                if let bundleId = server.terminalApp {
-                    IconButton(icon: "terminal", help: "Reveal terminal") {
-                        appState.revealTerminal(bundleId: bundleId)
+                HStack(spacing: 2) {
+                    if let bundleId = server.terminalApp {
+                        IconButton(icon: "terminal", help: "Reveal terminal") {
+                            appState.revealTerminal(bundleId: bundleId)
+                        }
+                        .disabled(isKilling)
+                    }
+
+                    if server.hasLogs {
+                        IconButton(icon: "text.justify.left", help: "View logs") {
+                            appState.toggleLog(project: server)
+                        }
+                        .disabled(isKilling)
+                    }
+
+                    IconButton(icon: "globe", help: "Open in browser") {
+                        if let port = server.ports.first {
+                            appState.openInBrowser(port: port)
+                        }
                     }
                     .disabled(isKilling)
-                }
 
+                    if isKilling {
+                        ProgressView()
+                            .scaleEffect(0.5)
+                            .frame(width: 26, height: 26)
+                    } else {
+                        IconButton(icon: "xmark.circle", help: "Kill", color: .red) {
+                            appState.kill(server: server)
+                        }
+                    }
+                }
+            } else {
+                // Stopped: show logs button if available
                 if server.hasLogs {
                     IconButton(icon: "text.justify.left", help: "View logs") {
-                        appState.toggleLog(server: server)
-                    }
-                    .disabled(isKilling)
-                }
-
-                IconButton(icon: "globe", help: "Open in browser") {
-                    if let port = server.ports.first {
-                        appState.openInBrowser(port: port)
-                    }
-                }
-                .disabled(isKilling)
-
-                if isKilling {
-                    ProgressView()
-                        .scaleEffect(0.5)
-                        .frame(width: 26, height: 26)
-                } else {
-                    IconButton(icon: "xmark.circle", help: "Kill", color: .red) {
-                        appState.kill(server: server)
+                        appState.toggleLog(project: server)
                     }
                 }
             }
@@ -76,6 +90,14 @@ struct ServerCard: View {
             RoundedRectangle(cornerRadius: 8)
                 .fill(Color(NSColor.controlBackgroundColor))
         )
+        .opacity(server.isRunning ? 1 : 0.7)
+        .contextMenu {
+            if !server.isRunning {
+                Button("Forget") {
+                    appState.forget(project: server)
+                }
+            }
+        }
     }
 }
 
