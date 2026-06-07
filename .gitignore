@@ -12,3 +12,6 @@ out/
 
 # macOS
 .DS_Store
+
+# Arc local activity log
+.arc/
