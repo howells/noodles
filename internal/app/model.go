@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-type Confidence string
+type Confidence = string
 
 const (
 	ConfidenceLow    Confidence = "low"

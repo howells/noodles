@@ -2,13 +2,11 @@ package classifier
 
 import (
 	"strings"
-
-	"github.com/howells/noodles/internal/app"
 )
 
 type Classification struct {
 	Label      string
-	Confidence app.Confidence
+	Confidence string
 	Evidence   []string
 }
 
@@ -20,7 +18,7 @@ func Classify(command string, commandLine string, cwd string, parentCommands []s
 	if strings.Contains(commandLineText, "storybook") {
 		return Classification{
 			Label:      "storybook",
-			Confidence: app.ConfidenceHigh,
+			Confidence: "high",
 			Evidence:   []string{"command line contains storybook"},
 		}
 	}
@@ -28,7 +26,7 @@ func Classify(command string, commandLine string, cwd string, parentCommands []s
 	if containsAny(commandLineText, "next dev", "vite", "tsx", "webpack-dev-server") || containsAny(commandText, "vite", "next") {
 		return Classification{
 			Label:      "dev-server",
-			Confidence: app.ConfidenceHigh,
+			Confidence: "high",
 			Evidence:   []string{"command or command line matches dev server: next/vite/tsx"},
 		}
 	}
@@ -36,7 +34,7 @@ func Classify(command string, commandLine string, cwd string, parentCommands []s
 	if containsAny(commandText, "agent-browser", "codex", "claude") || containsAny(commandLineText, "agent-browser", "codex", "claude") || containsAny(parentText, "codex", "claude") {
 		return Classification{
 			Label:      "agent",
-			Confidence: app.ConfidenceHigh,
+			Confidence: "high",
 			Evidence:   []string{"command or parent chain contains agent marker"},
 		}
 	}
@@ -44,7 +42,7 @@ func Classify(command string, commandLine string, cwd string, parentCommands []s
 	if containsAny(commandText, "chrome", "safari", "firefox") || containsAny(commandLineText, "chrome", "safari", "firefox") {
 		return Classification{
 			Label:      "browser",
-			Confidence: app.ConfidenceMedium,
+			Confidence: "medium",
 			Evidence:   []string{"command contains Chrome/Safari/Firefox browser marker"},
 		}
 	}
@@ -52,7 +50,7 @@ func Classify(command string, commandLine string, cwd string, parentCommands []s
 	if containsAny(commandText, "node", "bun", "deno", "npm", "pnpm", "yarn") {
 		return Classification{
 			Label:      "node-tool",
-			Confidence: app.ConfidenceMedium,
+			Confidence: "medium",
 			Evidence:   []string{"command matches JavaScript runtime or package manager"},
 		}
 	}
@@ -60,7 +58,7 @@ func Classify(command string, commandLine string, cwd string, parentCommands []s
 	if containsAny(commandText, "controlcenter", "launchd", "rapportd") {
 		return Classification{
 			Label:      "system",
-			Confidence: app.ConfidenceMedium,
+			Confidence: "medium",
 			Evidence:   []string{"command matches known system process"},
 		}
 	}
@@ -72,7 +70,7 @@ func Classify(command string, commandLine string, cwd string, parentCommands []s
 
 	return Classification{
 		Label:      "unknown",
-		Confidence: app.ConfidenceLow,
+		Confidence: "low",
 		Evidence:   evidence,
 	}
 }
