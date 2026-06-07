@@ -358,7 +358,7 @@ export default function App() {
 
   return (
     <main className="app-shell">
-      <header className="topbar">
+      <header className="topbar titlebar">
         <div>
           <h1>Noodles</h1>
           <div className="meta-line">
