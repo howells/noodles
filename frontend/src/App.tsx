@@ -1,5 +1,6 @@
 import { AlertTriangle, CircleStop, RefreshCw, Search, SlidersHorizontal, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { KillService as wailsKillService, Scan as wailsScan } from "../wailsjs/go/main/App";
 
 type Confidence = "low" | "medium" | "high";
 type SortBy = "" | "memory" | "cpu" | "port" | "age" | "project" | "process" | "source";
@@ -506,35 +507,19 @@ export default function App() {
 
 function createNoodlesApi(): NoodlesApi {
   const removedServiceIds = new Set<string>();
-  let bindingPromise: Promise<Partial<Record<"Scan" | "KillService", unknown>> | null> | null = null;
-
-  async function loadBindings() {
-    if (!hasWailsRuntime()) return null;
-    if (!bindingPromise) {
-      const dynamicImport = new Function("path", "return import(path)") as (
-        path: string,
-      ) => Promise<Partial<Record<"Scan" | "KillService", unknown>>>;
-      bindingPromise = dynamicImport("./wailsjs/go/main/App")
-        .then((module) => module as Partial<Record<"Scan" | "KillService", unknown>>)
-        .catch(() => null);
-    }
-    return bindingPromise;
-  }
 
   return {
     async scan(query: Query) {
-      const bindings = await loadBindings();
-      if (bindings && typeof bindings.Scan === "function") {
-        return (bindings.Scan as (query: Query) => Promise<Snapshot>)(query);
+      if (hasWailsRuntime()) {
+        return wailsScan(query as never) as Promise<Snapshot>;
       }
       await delay(160);
       const services = mockSnapshot.services.filter((service) => !removedServiceIds.has(service.id));
       return buildFallbackSnapshot(services, query);
     },
     async killService(request: KillRequest) {
-      const bindings = await loadBindings();
-      if (bindings && typeof bindings.KillService === "function") {
-        return (bindings.KillService as (request: KillRequest) => Promise<KillResult>)(request);
+      if (hasWailsRuntime()) {
+        return wailsKillService(request as never) as Promise<KillResult>;
       }
       await delay(180);
       removedServiceIds.add(request.serviceId);

@@ -1,70 +1,85 @@
 # Noodles
 
-A visual Node.js dev server manager for macOS. Lives in your menu bar, shows what's running, and lets you kill it.
+Noodles is a macOS local development service cleanup app.
 
-![Screenshot placeholder](https://noodles.danielhowells.com/og.png)
+It scans local TCP listeners, explains which project or tool appears to own each service, highlights memory-heavy processes, and lets you kill a service process tree with one click.
 
-## What it does
+## Status
 
-Noodles monitors your local dev servers and displays them in a compact popover from the menu bar.
+Noodles v2 replaces the original Swift menu bar app with:
 
-- **Auto-detects running servers** by scanning listening ports (node, bun, deno, vite, next-server)
-- **Port badges** -- click any port number to open `localhost` in your browser
-- **Kill process trees** -- stop a server and all its child processes
-- **View logs** -- reads from `~/.cache/noodles/logs/` when using the companion `ndev` shell function
-- **Reveal terminal** -- jump to the terminal window that spawned the server
-- **Remembers projects** -- previously seen servers stay in the list as stopped entries
-- **Launch on login** -- optional, via macOS Login Items
-- **Menu bar icon** -- a 2x2 dot grid where dots light up green for each running server
+- Go core for scanning, project detection, sorting, grouping, kill planning, and signal execution
+- Wails desktop shell
+- React/Vite operational table frontend
+- CLI wrapper over the same core
 
-## Install
+The old Swift app remains under `app/` for reference while v2 reaches parity.
 
-Download the latest DMG from [Releases](https://github.com/danielhowells/noodles/releases).
+## Requirements
 
-## Build from source
+- macOS
+- Go 1.26.2
+- Node 24.x
+- pnpm 10.x
+- Wails v2 CLI for desktop development and packaging
 
-### Requirements
+## Development
 
-- macOS 13.0+
-- Xcode 15+
-
-### Steps
+Install frontend dependencies:
 
 ```bash
-git clone https://github.com/danielhowells/noodles.git
-cd noodles
-open app/Noodles.xcodeproj
+pnpm --dir frontend install
 ```
 
-Build and run from Xcode (`Cmd+R`), or use the build script for a signed and notarized release:
+Run tests:
 
 ```bash
-./scripts/build.sh
+go test ./...
+pnpm --dir frontend build
 ```
 
-The build script archives, signs with Developer ID, notarizes with Apple, and produces a DMG in `build/`.
+Run the CLI:
 
-## Optional: `ndev` shell function
-
-Noodles can display dev server logs if you start servers with the included `ndev` Fish function. It wraps your package manager's `dev` script and tees output to `~/.cache/noodles/logs/`.
-
-```fish
-# Add to your Fish config
-source /path/to/noodles/ndev.fish
-
-# Then instead of `npm run dev`:
-ndev
+```bash
+go run ./cmd/noodles list --sort memory
 ```
 
-## Project structure
+Run the frontend in browser-only mock mode:
 
+```bash
+pnpm --dir frontend dev --host 127.0.0.1
 ```
-noodles/
-  app/              # Swift macOS app (Xcode project)
-  site/             # Marketing site (Next.js)
-  scripts/          # Build and distribution scripts
-  build/            # Build artifacts (DMG, xcarchive)
+
+Run the Wails desktop app:
+
+```bash
+wails dev
 ```
+
+## Project Structure
+
+```text
+.
+├── cmd/noodles/        # CLI wrapper
+├── desktop_app.go      # Wails-bound app methods
+├── desktop_main.go     # Wails launcher
+├── frontend/           # React/Vite UI and embedded dist
+├── internal/app/       # Core scanner/view domain
+├── internal/classifier/ # Service source labels
+├── internal/desktop/   # Desktop service adapter and production wiring
+├── internal/killer/    # Revalidated kill plans and signal execution
+├── internal/ports/     # lsof listener collection
+├── internal/processes/ # ps/lsof process enrichment
+├── internal/projects/  # CWD to project identity
+├── app/                # Legacy Swift implementation
+└── site/               # Marketing site
+```
+
+## Safety Model
+
+Kill requests are revalidated before signals are sent. The backend checks PID, process group, start time, command or executable path, CWD, project root, and expected ports against a fresh scan. If identity changed, no signal is sent.
+
+Execution sends `SIGTERM`, waits a bounded grace period, then sends `SIGKILL` only for targets still alive.
 
 ## License
 
