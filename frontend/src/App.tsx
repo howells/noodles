@@ -1,5 +1,5 @@
 import { AlertTriangle, CircleStop, RefreshCw, Search, SlidersHorizontal, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 type Confidence = "low" | "medium" | "high";
 type SortBy = "" | "memory" | "cpu" | "port" | "age" | "project" | "process" | "source";
@@ -85,6 +85,46 @@ type Snapshot = {
     scannerWarnings?: string[];
   };
 };
+
+type KillRequest = {
+  snapshotId: string;
+  serviceId: string;
+  pid: number;
+  processGroupId: number;
+  startedAt: string;
+  command: string;
+  executablePath: string;
+  cwd: string;
+  projectRoot: string;
+  expectedPorts: number[];
+  requestedAction: "service";
+};
+
+type KillResult = {
+  planSnapshotId: string;
+  targets: Array<{
+    serviceId: string;
+    pid: number;
+    success: boolean;
+    errorReason?: string;
+  }>;
+  exclusions: Array<{
+    serviceId: string;
+    pid: number;
+    reason: string;
+  }>;
+};
+
+type NoodlesApi = {
+  scan(query: Query): Promise<Snapshot>;
+  killService(request: KillRequest): Promise<KillResult>;
+};
+
+declare global {
+  interface Window {
+    runtime?: unknown;
+  }
+}
 
 const mockSnapshot: Snapshot = {
   id: "mock-snapshot",
@@ -229,38 +269,91 @@ const mockSnapshot: Snapshot = {
   },
 };
 
+const defaultQuery: Query = {
+  sortBy: "memory",
+  sortDirection: "desc",
+  groupBy: "project",
+  search: "",
+  hideSystem: false,
+  killableOnly: false,
+};
+
+const noodlesApi = createNoodlesApi();
+
 export default function App() {
-  const [query, setQuery] = useState<Query>({
-    sortBy: "memory",
-    sortDirection: "desc",
-    groupBy: "project",
-    search: "",
-    hideSystem: false,
-    killableOnly: false,
-  });
-  const [snapshot, setSnapshot] = useState<Snapshot>(mockSnapshot);
-  const [scanning, setScanning] = useState(true);
+	const [query, setQuery] = useState<Query>(defaultQuery);
+	const [snapshot, setSnapshot] = useState<Snapshot>(() => buildFallbackSnapshot(mockSnapshot.services, defaultQuery));
+	const [scanning, setScanning] = useState(true);
+	const [stale, setStale] = useState(false);
+	const [scanError, setScanError] = useState("");
+	const [killing, setKilling] = useState<Record<string, boolean>>({});
+	const [killFailures, setKillFailures] = useState<Record<string, string>>({});
 
-  useEffect(() => {
-    const timer = window.setTimeout(() => setScanning(false), 260);
-    return () => window.clearTimeout(timer);
-  }, []);
+	useEffect(() => {
+		let cancelled = false;
+		const timer = window.setTimeout(() => {
+			setScanning(true);
+			setScanError("");
+			noodlesApi
+				.scan(query)
+				.then((nextSnapshot) => {
+					if (cancelled) return;
+					setSnapshot(nextSnapshot);
+					setStale(false);
+				})
+				.catch((error: unknown) => {
+					if (cancelled) return;
+					setScanError(errorMessage(error));
+					setStale(true);
+				})
+				.finally(() => {
+					if (!cancelled) setScanning(false);
+				});
+		}, 140);
+		return () => {
+			cancelled = true;
+			window.clearTimeout(timer);
+		};
+	}, [query]);
 
-  const services = useMemo(() => filterServices(snapshot.services, query), [snapshot.services, query]);
-  const killableCount = services.filter((service) => service.killable).length;
-  const totalMemory = services.reduce((total, service) => total + service.residentMemoryBytes, 0);
+	const services = snapshot.services;
+	const killableCount = services.filter((service) => service.killable).length;
+	const totalMemory = services.reduce((total, service) => total + service.residentMemoryBytes, 0);
 
-  function refresh() {
-    setScanning(true);
-    window.setTimeout(() => setScanning(false), 320);
-  }
+	function refresh() {
+		setQuery({ ...query });
+	}
 
-  function removeService(serviceId: string) {
-    setSnapshot((current) => ({
-      ...current,
-      services: current.services.filter((service) => service.id !== serviceId),
-    }));
-  }
+	async function killService(service: Service) {
+		setKilling((current) => ({ ...current, [service.id]: true }));
+		setKillFailures((current) => {
+			const next = { ...current };
+			delete next[service.id];
+			return next;
+		});
+		try {
+			const result = await noodlesApi.killService(killRequestFromService(service));
+			const target = result.targets.find((candidate) => candidate.serviceId === service.id);
+			if (!target?.success) {
+				const exclusion = result.exclusions.find((candidate) => candidate.serviceId === service.id);
+				throw new Error(target?.errorReason || exclusion?.reason || "kill did not complete");
+			}
+			setSnapshot((current) => withServices(current, current.services.filter((candidate) => candidate.id !== service.id)));
+			setStale(true);
+			refresh();
+		} catch (error) {
+			setKillFailures((current) => ({ ...current, [service.id]: errorMessage(error) }));
+		} finally {
+			setKilling((current) => ({ ...current, [service.id]: false }));
+		}
+	}
+
+	async function killGroup(group: Group) {
+		const groupServices = services.filter((service) => group.serviceIds.includes(service.id) && service.killable);
+		for (const service of groupServices) {
+			await killService(service);
+		}
+	}
 
   return (
     <main className="app-shell">
@@ -324,6 +417,8 @@ export default function App() {
         <span className={scanning ? "dot dot-active" : "dot"} />
         <span>{scanning ? "Scanning" : `Last scan ${formatTime(snapshot.metadata.lastSuccessfulScanAt)}`}</span>
         <span>{snapshot.metadata.scanDurationMs} ms</span>
+        {stale ? <span className="stale-label">Stale</span> : null}
+        {scanError ? <span className="error-label">{scanError}</span> : null}
         {snapshot.metadata.scanSkippedReason ? <span>{snapshot.metadata.scanSkippedReason}</span> : null}
       </section>
 
@@ -337,7 +432,13 @@ export default function App() {
                 <span>{group.ports.join(", ")}</span>
                 <span>{group.sourceLabels.join(", ")}</span>
               </div>
-              <button className="kill-group" type="button" title={`Kill ${group.killableServiceCount} services`}>
+              <button
+                className="kill-group"
+                disabled={group.killableServiceCount === 0}
+                onClick={() => killGroup(group)}
+                type="button"
+                title={`Kill ${group.killableServiceCount} services`}
+              >
                 <CircleStop size={16} aria-hidden="true" />
                 Kill {group.killableServiceCount}
               </button>
@@ -384,13 +485,14 @@ export default function App() {
                   <td className="action-cell">
                     <button
                       className="kill-button"
-                      disabled={!service.killable}
-                      onClick={() => removeService(service.id)}
+                      disabled={!service.killable || killing[service.id]}
+                      onClick={() => killService(service)}
                       title={service.killable ? "Kill service" : "Service excluded from kill"}
                       type="button"
                     >
-                      <Trash2 size={16} aria-hidden="true" />
+                      {killing[service.id] ? <RefreshCw size={16} aria-hidden="true" /> : <Trash2 size={16} aria-hidden="true" />}
                     </button>
+                    {killFailures[service.id] ? <div className="kill-error">{killFailures[service.id]}</div> : null}
                   </td>
                 </tr>
               ))}
@@ -400,6 +502,140 @@ export default function App() {
       </section>
     </main>
   );
+}
+
+function createNoodlesApi(): NoodlesApi {
+  const removedServiceIds = new Set<string>();
+  let bindingPromise: Promise<Partial<Record<"Scan" | "KillService", unknown>> | null> | null = null;
+
+  async function loadBindings() {
+    if (!hasWailsRuntime()) return null;
+    if (!bindingPromise) {
+      const dynamicImport = new Function("path", "return import(path)") as (
+        path: string,
+      ) => Promise<Partial<Record<"Scan" | "KillService", unknown>>>;
+      bindingPromise = dynamicImport("./wailsjs/go/main/App")
+        .then((module) => module as Partial<Record<"Scan" | "KillService", unknown>>)
+        .catch(() => null);
+    }
+    return bindingPromise;
+  }
+
+  return {
+    async scan(query: Query) {
+      const bindings = await loadBindings();
+      if (bindings && typeof bindings.Scan === "function") {
+        return (bindings.Scan as (query: Query) => Promise<Snapshot>)(query);
+      }
+      await delay(160);
+      const services = mockSnapshot.services.filter((service) => !removedServiceIds.has(service.id));
+      return buildFallbackSnapshot(services, query);
+    },
+    async killService(request: KillRequest) {
+      const bindings = await loadBindings();
+      if (bindings && typeof bindings.KillService === "function") {
+        return (bindings.KillService as (request: KillRequest) => Promise<KillResult>)(request);
+      }
+      await delay(180);
+      removedServiceIds.add(request.serviceId);
+      return {
+        planSnapshotId: request.snapshotId,
+        targets: [{ serviceId: request.serviceId, pid: request.pid, success: true }],
+        exclusions: [],
+      };
+    },
+  };
+}
+
+function hasWailsRuntime(): boolean {
+  return typeof window !== "undefined" && window.runtime !== undefined;
+}
+
+function killRequestFromService(service: Service): KillRequest {
+  return {
+    snapshotId: service.snapshotId,
+    serviceId: service.id,
+    pid: service.pid,
+    processGroupId: service.processGroupId,
+    startedAt: service.startedAt,
+    command: service.command,
+    executablePath: service.executablePath,
+    cwd: service.cwd,
+    projectRoot: service.projectRoot,
+    expectedPorts: [...service.ports],
+    requestedAction: "service",
+  };
+}
+
+function buildFallbackSnapshot(services: Service[], query: Query): Snapshot {
+  const filtered = sortServices(filterServices(services, query), query);
+  return withServices(
+    {
+      ...mockSnapshot,
+      id: `mock-${Date.now()}`,
+      metadata: {
+        ...mockSnapshot.metadata,
+        snapshotId: `mock-${Date.now()}`,
+        scanStartedAt: new Date().toISOString(),
+        scanFinishedAt: new Date().toISOString(),
+        lastSuccessfulScanAt: new Date().toISOString(),
+        scanDurationMs: 112,
+      },
+    },
+    filtered,
+  );
+}
+
+function withServices(snapshot: Snapshot, services: Service[]): Snapshot {
+  const projectsById = new Map<string, Project>();
+  for (const service of services) {
+    const id = service.projectId || "unknown";
+    const existing = projectsById.get(id);
+    const project =
+      existing ??
+      ({
+        id,
+        name: service.projectName || id,
+        displayName: service.projectDisplayName || service.projectName || id,
+        root: service.projectRoot,
+        workspaceRoot: service.workspaceRoot,
+        serviceCount: 0,
+        totalResidentMemoryBytes: 0,
+        ports: [],
+        sourceLabels: [],
+        killableServiceCount: 0,
+        excludedServiceCount: 0,
+      } satisfies Project);
+    project.serviceCount += 1;
+    project.totalResidentMemoryBytes += service.residentMemoryBytes;
+    project.ports = uniqueNumbers([...project.ports, ...service.ports]);
+    project.sourceLabels = uniqueStrings([...project.sourceLabels, service.sourceLabel]);
+    if (service.killable) project.killableServiceCount += 1;
+    else project.excludedServiceCount += 1;
+    projectsById.set(id, project);
+  }
+
+  const projects = Array.from(projectsById.values()).sort(
+    (a, b) => b.totalResidentMemoryBytes - a.totalResidentMemoryBytes || a.displayName.localeCompare(b.displayName),
+  );
+  const groups = projects.map((project) => ({
+    id: project.id,
+    label: project.displayName,
+    kind: "project" as GroupBy,
+    serviceIds: services.filter((service) => service.projectId === project.id).map((service) => service.id).sort(),
+    ports: project.ports,
+    totalResidentMemoryBytes: project.totalResidentMemoryBytes,
+    killableServiceCount: project.killableServiceCount,
+    excludedServiceCount: project.excludedServiceCount,
+    sourceLabels: project.sourceLabels,
+  }));
+
+  return {
+    ...snapshot,
+    services,
+    projects,
+    groups,
+  };
 }
 
 function filterServices(services: Service[], query: Query): Service[] {
@@ -423,6 +659,36 @@ function filterServices(services: Service[], query: Query): Service[] {
   });
 }
 
+function sortServices(services: Service[], query: Query): Service[] {
+  return [...services].sort((a, b) => {
+    switch (query.sortBy) {
+      case "cpu":
+        return applyDirection(query, (a.cpuPercent ?? -1) - (b.cpuPercent ?? -1));
+      case "port":
+        return applyDirection(query, lowestPort(a.ports) - lowestPort(b.ports));
+      case "age":
+        return applyDirection(query, a.ageSeconds - b.ageSeconds);
+      case "project":
+        return applyDirection(query, projectLabel(a).localeCompare(projectLabel(b)));
+      case "process":
+        return applyDirection(query, a.command.localeCompare(b.command));
+      case "source":
+        return applyDirection(query, a.sourceLabel.localeCompare(b.sourceLabel));
+      case "memory":
+      default:
+        return applyDirection(query, a.residentMemoryBytes - b.residentMemoryBytes);
+    }
+  });
+}
+
+function applyDirection(query: Query, value: number): number {
+  return query.sortDirection === "asc" ? value : -value;
+}
+
+function lowestPort(ports: number[]): number {
+  return ports.length ? Math.min(...ports) : 0;
+}
+
 function projectLabel(service: Service): string {
   return service.projectDisplayName || service.projectName || service.cwd || "unknown";
 }
@@ -444,4 +710,21 @@ function formatTime(value: string): string {
     minute: "2-digit",
     second: "2-digit",
   }).format(new Date(value));
+}
+
+function uniqueNumbers(values: number[]): number[] {
+  return Array.from(new Set(values)).sort((a, b) => a - b);
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values.filter(Boolean))).sort((a, b) => a.localeCompare(b));
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
 }

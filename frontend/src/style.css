@@ -174,6 +174,27 @@ h1 {
   box-shadow: 0 0 0 5px rgba(36, 89, 166, 0.14);
 }
 
+.stale-label,
+.error-label {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.stale-label {
+  background: #e6eefc;
+  color: #2459a6;
+}
+
+.error-label {
+  background: #f0d9d9;
+  color: #8f2d2d;
+}
+
 .group-strip {
   display: grid;
   gap: 1px;
@@ -213,6 +234,11 @@ h1 {
 
 .kill-group:hover {
   background: #752121;
+}
+
+.kill-group:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .table-region {
@@ -353,6 +379,15 @@ tbody tr:hover {
 .kill-button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
+}
+
+.kill-error {
+  max-width: 130px;
+  margin-top: 5px;
+  color: #8f2d2d;
+  font-size: 11px;
+  line-height: 1.25;
+  text-align: right;
 }
 
 .empty-state {
