@@ -49,7 +49,6 @@ func NewScanner(
 }
 
 func (s *Scanner) Scan(ctx context.Context, query Query) (Snapshot, error) {
-	_ = query
 	startedAt := s.now()
 	listeners, err := s.listeners.Collect(ctx)
 	if err != nil {
@@ -128,7 +127,7 @@ func (s *Scanner) Scan(ctx context.Context, query Query) (Snapshot, error) {
 		},
 	}
 
-	return snapshot, nil
+	return BuildView(snapshot, query), nil
 }
 
 func uniqueListenerPIDs(listeners []ports.Listener) []int {
