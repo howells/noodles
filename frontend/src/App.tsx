@@ -1,4 +1,4 @@
-import { AlertTriangle, CircleStop, RefreshCw, Search, SlidersHorizontal, Trash2 } from "lucide-react";
+import { AlertTriangle, RefreshCw, Search, SlidersHorizontal, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { KillService as wailsKillService, Scan as wailsScan } from "../wailsjs/go/main/App";
 
@@ -273,9 +273,9 @@ const mockSnapshot: Snapshot = {
 const defaultQuery: Query = {
   sortBy: "memory",
   sortDirection: "desc",
-  groupBy: "project",
+  groupBy: "none",
   search: "",
-  hideSystem: false,
+  hideSystem: true,
   killableOnly: false,
 };
 
@@ -318,8 +318,11 @@ export default function App() {
 	}, [query]);
 
 	const services = snapshot.services;
-	const killableCount = services.filter((service) => service.killable).length;
-	const totalMemory = services.reduce((total, service) => total + service.residentMemoryBytes, 0);
+	const cleanupServices = services.filter(isCleanupCandidate);
+	const otherServices = services.filter((service) => !isCleanupCandidate(service));
+	const killableCount = cleanupServices.filter((service) => service.killable).length;
+	const totalMemory = cleanupServices.reduce((total, service) => total + service.residentMemoryBytes, 0);
+	const visibleOtherServices = query.hideSystem ? [] : otherServices;
 
 	function refresh() {
 		setQuery({ ...query });
@@ -349,20 +352,13 @@ export default function App() {
 		}
 	}
 
-	async function killGroup(group: Group) {
-		const groupServices = services.filter((service) => group.serviceIds.includes(service.id) && service.killable);
-		for (const service of groupServices) {
-			await killService(service);
-		}
-	}
-
   return (
     <main className="app-shell">
       <header className="topbar titlebar">
         <div>
           <h1>Noodles</h1>
           <div className="meta-line">
-            {services.length} services · {killableCount} killable · {formatBytes(totalMemory)} resident
+            {cleanupServices.length} cleanup candidates · {killableCount} killable · {formatBytes(totalMemory)} resident
           </div>
         </div>
         <div className="toolbar">
@@ -381,7 +377,6 @@ export default function App() {
               onChange={(event) => setQuery({ ...query, sortBy: event.target.value as SortBy })}
             >
               <option value="memory">Memory</option>
-              <option value="cpu">CPU</option>
               <option value="port">Port</option>
               <option value="age">Age</option>
               <option value="project">Project</option>
@@ -395,7 +390,7 @@ export default function App() {
               checked={query.hideSystem}
               onChange={(event) => setQuery({ ...query, hideSystem: event.target.checked })}
             />
-            Hide system
+            Hide other
           </label>
           <button className="icon-button" onClick={refresh} title="Refresh services" type="button">
             <RefreshCw size={17} aria-hidden="true" />
@@ -421,87 +416,113 @@ export default function App() {
         {stale ? <span className="stale-label">Stale</span> : null}
         {scanError ? <span className="error-label">{scanError}</span> : null}
         {snapshot.metadata.scanSkippedReason ? <span>{snapshot.metadata.scanSkippedReason}</span> : null}
+        {otherServices.length ? <span>{query.hideSystem ? `${otherServices.length} other hidden` : `${otherServices.length} other shown`}</span> : null}
       </section>
 
-      {query.groupBy === "project" && services.length ? (
-        <section className="group-strip" aria-label="Project groups">
-          {snapshot.groups.map((group) => (
-            <div className="group-row" key={group.id}>
-              <div>
-                <strong>{group.label}</strong>
-                <span>{formatBytes(group.totalResidentMemoryBytes)}</span>
-                <span>{group.ports.join(", ")}</span>
-                <span>{group.sourceLabels.join(", ")}</span>
-              </div>
-              <button
-                className="kill-group"
-                disabled={group.killableServiceCount === 0}
-                onClick={() => killGroup(group)}
-                type="button"
-                title={`Kill ${group.killableServiceCount} services`}
-              >
-                <CircleStop size={16} aria-hidden="true" />
-                Kill {group.killableServiceCount}
-              </button>
-            </div>
-          ))}
-        </section>
-      ) : null}
-
       <section className="table-region" aria-label="Running services">
-        {services.length === 0 ? (
-          <div className="empty-state">No matching services</div>
+        {cleanupServices.length === 0 && visibleOtherServices.length === 0 ? (
+          <div className="empty-state">
+            {otherServices.length ? `No cleanup candidates. ${otherServices.length} other listeners are hidden.` : "No matching services"}
+          </div>
         ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Project</th>
-                <th>Command</th>
-                <th>Ports</th>
-                <th>Memory</th>
-                <th>CPU</th>
-                <th>Age</th>
-                <th>Source</th>
-                <th aria-label="Actions" />
-              </tr>
-            </thead>
-            <tbody>
-              {services.map((service) => (
-                <tr key={service.id} className={service.killable ? undefined : "muted-row"}>
-                  <td>
-                    <div className="primary-text">{projectLabel(service)}</div>
-                    <div className="secondary-text">{service.cwd}</div>
-                  </td>
-                  <td>
-                    <div className="primary-text">{service.command}</div>
-                    <div className="secondary-text">{service.commandLine}</div>
-                  </td>
-                  <td>{service.ports.join(", ")}</td>
-                  <td>{formatBytes(service.residentMemoryBytes)}</td>
-                  <td>{service.cpuPercent === undefined ? "sample pending" : `${service.cpuPercent.toFixed(1)}%`}</td>
-                  <td>{formatAge(service.ageSeconds)}</td>
-                  <td>
-                    <span className={`source-pill confidence-${service.sourceConfidence}`}>{service.sourceLabel}</span>
-                  </td>
-                  <td className="action-cell">
-                    <button
-                      className="kill-button"
-                      disabled={!service.killable || killing[service.id]}
-                      onClick={() => killService(service)}
-                      title={service.killable ? "Kill service" : "Service excluded from kill"}
-                      type="button"
-                    >
-                      {killing[service.id] ? <RefreshCw size={16} aria-hidden="true" /> : <Trash2 size={16} aria-hidden="true" />}
-                    </button>
-                    {killFailures[service.id] ? <div className="kill-error">{killFailures[service.id]}</div> : null}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="service-sections">
+            <ServiceSection
+              title="Cleanup candidates"
+              meta={`${cleanupServices.length} sorted by ${sortLabel(query.sortBy)}`}
+              services={cleanupServices}
+              killing={killing}
+              killFailures={killFailures}
+              onKill={killService}
+            />
+            {visibleOtherServices.length ? (
+              <ServiceSection
+                title="Other listeners"
+                meta="Shown for review, not one-click cleanup"
+                services={visibleOtherServices}
+                killing={killing}
+                killFailures={killFailures}
+                muted
+                onKill={killService}
+              />
+            ) : null}
+          </div>
         )}
       </section>
     </main>
+  );
+}
+
+type ServiceSectionProps = {
+  title: string;
+  meta: string;
+  services: Service[];
+  killing: Record<string, boolean>;
+  killFailures: Record<string, string>;
+  muted?: boolean;
+  onKill(service: Service): void;
+};
+
+function ServiceSection({ title, meta, services, killing, killFailures, muted, onKill }: ServiceSectionProps) {
+  if (services.length === 0) return null;
+
+  return (
+    <section className={muted ? "service-section service-section-muted" : "service-section"}>
+      <header className="section-header">
+        <div>
+          <h2>{title}</h2>
+          <div className="section-meta">{meta}</div>
+        </div>
+      </header>
+      <table>
+        <thead>
+          <tr>
+            <th>Service</th>
+            <th>Ports</th>
+            <th>Memory</th>
+            <th>Age</th>
+            <th>Source</th>
+            <th aria-label="Actions" />
+          </tr>
+        </thead>
+        <tbody>
+          {services.map((service) => {
+            const cleanupCandidate = isCleanupCandidate(service);
+            return (
+              <tr key={service.id} className={cleanupCandidate ? undefined : "muted-row"}>
+                <td>
+                  <div className="primary-text">{serviceTitle(service)}</div>
+                  <div className="secondary-text">{serviceDetail(service)}</div>
+                </td>
+                <td>
+                  <span className="port-summary">{formatPortSummary(service.ports)}</span>
+                </td>
+                <td className="memory-cell">{formatBytes(service.residentMemoryBytes)}</td>
+                <td>{formatAge(service.ageSeconds)}</td>
+                <td>
+                  <span className={`source-pill confidence-${service.sourceConfidence}`}>{service.sourceLabel || "unknown"}</span>
+                </td>
+                <td className="action-cell">
+                  {cleanupCandidate ? (
+                    <button
+                      className="kill-button"
+                      disabled={!service.killable || killing[service.id]}
+                      onClick={() => onKill(service)}
+                      type="button"
+                    >
+                      {killing[service.id] ? <RefreshCw size={15} aria-hidden="true" /> : <Trash2 size={15} aria-hidden="true" />}
+                      Kill
+                    </button>
+                  ) : (
+                    <span className="review-label">Review</span>
+                  )}
+                  {killFailures[service.id] ? <div className="kill-error">{killFailures[service.id]}</div> : null}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </section>
   );
 }
 
@@ -676,6 +697,75 @@ function lowestPort(ports: number[]): number {
 
 function projectLabel(service: Service): string {
   return service.projectDisplayName || service.projectName || service.cwd || "unknown";
+}
+
+function serviceTitle(service: Service): string {
+  const label = projectLabel(service);
+  if (label && label !== "/" && label !== "unknown") return label;
+  return service.command || "unknown listener";
+}
+
+function serviceDetail(service: Service): string {
+  const command = service.commandLine || service.command || "unknown command";
+  const location = compactPath(service.cwd || service.projectRoot || service.executablePath || "");
+  if (!location || location === command) return command;
+  return `${command} · ${location}`;
+}
+
+function isCleanupCandidate(service: Service): boolean {
+  if (!service.killable) return false;
+  if (isRootOrSystemLocation(service)) return false;
+
+  const source = (service.sourceLabel || "").toLowerCase();
+  if (source === "system" || source === "unknown" || source === "browser") return false;
+
+  const cleanupSources = new Set(["agent", "dev-server", "node-tool", "storybook"]);
+  if (cleanupSources.has(source)) return true;
+
+  return service.sourceConfidence === "high" && isLikelyWorkspacePath(service.cwd || service.projectRoot);
+}
+
+function isRootOrSystemLocation(service: Service): boolean {
+  const label = projectLabel(service);
+  return [service.cwd, service.projectRoot, service.workspaceRoot, label].some((value) => {
+    const normalized = value.trim();
+    return normalized === "/" || normalized === "system" || normalized.startsWith("/System/") || normalized.startsWith("/Applications/");
+  });
+}
+
+function isLikelyWorkspacePath(value: string): boolean {
+  return /^\/Users\/[^/]+\/Sites(\/|$)/.test(value);
+}
+
+function compactPath(value: string): string {
+  return value.replace(/^\/Users\/[^/]+/, "~");
+}
+
+function formatPortSummary(ports: number[]): string {
+  if (ports.length === 0) return "—";
+  const sorted = [...ports].sort((a, b) => a - b);
+  const visible = sorted.slice(0, 3).join(", ");
+  return sorted.length > 3 ? `${visible} +${sorted.length - 3}` : visible;
+}
+
+function sortLabel(sortBy: SortBy): string {
+  switch (sortBy) {
+    case "age":
+      return "age";
+    case "port":
+      return "port";
+    case "project":
+      return "project";
+    case "process":
+      return "process";
+    case "source":
+      return "source";
+    case "cpu":
+      return "CPU";
+    case "memory":
+    default:
+      return "memory";
+  }
 }
 
 function formatBytes(bytes: number): string {
