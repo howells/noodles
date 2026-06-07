@@ -44,6 +44,21 @@ func TestBuildServiceKillPlanRejectsReusedPIDWithDifferentStartedAt(t *testing.T
 	}
 }
 
+func TestBuildServiceKillPlanAllowsFreshSnapshotWhenIdentityMatches(t *testing.T) {
+	service := killableServiceFixture()
+	fresh := service
+	fresh.SnapshotID = "snap-2"
+	snapshot := app.Snapshot{ID: "snap-2", Services: []app.Service{fresh}}
+
+	plan, err := BuildServiceKillPlan(requestFromService(service), snapshot)
+	if err != nil {
+		t.Fatalf("BuildServiceKillPlan returned error: %v", err)
+	}
+	if len(plan.Targets) != 1 {
+		t.Fatalf("expected target from matching fresh identity, got %#v", plan.Targets)
+	}
+}
+
 func TestBuildServiceKillPlanRejectsChangedPorts(t *testing.T) {
 	service := killableServiceFixture()
 	snapshot := app.Snapshot{ID: "snap-1", Services: []app.Service{service}}

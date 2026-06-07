@@ -104,12 +104,6 @@ func BuildServiceKillPlan(request KillRequest, current app.Snapshot) (KillPlan, 
 }
 
 func revalidateServiceIdentity(request KillRequest, current app.Snapshot, service app.Service) error {
-	if request.SnapshotID != "" && request.SnapshotID != current.ID && request.SnapshotID != service.SnapshotID {
-		return stale("snapshot changed")
-	}
-	if service.SnapshotID != "" && request.SnapshotID != "" && service.SnapshotID != request.SnapshotID {
-		return stale("service snapshot changed")
-	}
 	if request.PID != service.PID {
 		return stale("pid changed")
 	}

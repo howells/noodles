@@ -14,8 +14,7 @@ type App struct {
 }
 
 func NewApp() *App {
-	core := desktop.NewUnavailableCore("system scanner wiring is created after the desktop binding layer")
-	return &App{service: desktop.NewService(core)}
+	return &App{service: desktop.NewProductionService()}
 }
 
 func (a *App) startup(ctx context.Context) {

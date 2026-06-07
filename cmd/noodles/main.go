@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/howells/noodles/internal/app"
+	"github.com/howells/noodles/internal/desktop"
 	"github.com/howells/noodles/internal/killer"
 )
 
@@ -33,8 +34,7 @@ func (e *AmbiguousProjectError) Error() string {
 }
 
 func main() {
-	core := unavailableClient{}
-	if err := run(context.Background(), core, os.Stdout, os.Stderr, os.Args[1:]); err != nil {
+	if err := run(context.Background(), desktop.NewProductionService(), os.Stdout, os.Stderr, os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
@@ -201,14 +201,4 @@ func formatPorts(ports []int) string {
 func formatBytes(bytes uint64) string {
 	const mb = 1024 * 1024
 	return fmt.Sprintf("%.1f MB", float64(bytes)/mb)
-}
-
-type unavailableClient struct{}
-
-func (unavailableClient) Scan(context.Context, app.Query) (app.Snapshot, error) {
-	return app.Snapshot{}, errors.New("system scanner is not wired for CLI yet")
-}
-
-func (unavailableClient) KillService(context.Context, killer.KillRequest) (killer.KillResult, error) {
-	return killer.KillResult{}, errors.New("kill execution is not wired for CLI yet")
 }
