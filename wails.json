@@ -1,0 +1,20 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "noodles",
+  "outputfilename": "noodles",
+  "frontend:install": "pnpm install",
+  "frontend:build": "pnpm build",
+  "frontend:dev:watcher": "pnpm dev",
+  "frontend:dev:serverUrl": "auto",
+  "author": {
+    "name": "Daniel Howells",
+    "email": "daniel.howells@gmail.com"
+  },
+  "info": {
+    "companyName": "Daniel Howells",
+    "productName": "Noodles",
+    "productVersion": "0.1.0",
+    "copyright": "Copyright © 2026 Daniel Howells. All rights reserved.",
+    "comments": "Local development service cleanup."
+  }
+}
